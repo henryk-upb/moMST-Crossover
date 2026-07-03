@@ -770,6 +770,32 @@ class MergeCrossover(Recombinator):
 
         return self.child
 
+class UnionCrossover(Recombinator):
+    def __init__(self):
+        super().__init__()
+    
+    def create(self, tree1: Graph, tree2: Graph) -> Graph:
+        """
+        Produce a new spanning tree based on the UnionCrossover logic.
+
+        Args:
+            tree1 (Graph): the first parent spanning tree.
+            tree2 (Graph): the first parent spanning tree.
+
+        Returns:
+            A spanning tree.
+        """
+        assert tree1.is_spanning_tree()
+        assert tree2.is_spanning_tree()
+
+        self.child = tree1.copy()
+
+        for e in tree2.get_edges():
+            self.child.add_edge(e.copy(), check_exists = False)
+
+        return self.child
+    
+
 
 class SGSECJMutator(Mutator):
     """
