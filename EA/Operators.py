@@ -5,6 +5,7 @@ from Graph.Edge import Edge
 from Graph.algorithms.MST import KruskalRelink
 from Graph.algorithms.BFS import BFS
 from Graph.algorithms.DFS import DFS
+from Graph.algorithms.CC import CC
 from Graph.generators.RandomSpanningTreeGenerator import RandomSpanningTreeGenerator
 from EA.utils.RandomWeightSampler import WeightSampler, RandomWeightSampler, EquidistantWeightSampler
 from EA.utils.EdgeSampler import EdgeSampler, EdgeSamplerUniform
@@ -737,9 +738,10 @@ class IntersectionCrossover(Recombinator):
     Edges shared by both parent spanning trees (the intersection) are inherited
     directly into the child and stay fixed. The remaining edges needed to
     complete the spanning tree are chosen by Kruskal-relinking over a candidate
-    pool made up of the union of both parents' edges plus a linear (in the
-    number of nodes) number of additional randomly sampled edges from the
-    source graph, scalarised with a random weight vector.
+    pool made up of the union of both parents' edges minus the intersection
+    edges (i.e., R = (E(T1) u E(T2)) \\ I) plus a linear (in the number of
+    nodes) number of additional randomly sampled edges from the source graph,
+    scalarised with a random weight vector.
 
     Spanning tree constraints: not supported.
     """
@@ -797,20 +799,20 @@ class IntersectionCrossover(Recombinator):
         # intersection) are inherited directly and stay fixed from here on
         self.child = tree1.copy(copy_edges = False)
 
-        # union of both parents' edges: start with tree1's edges and add
-        # tree2's edges that are not already part of tree1
-        union_edges = list(tree1.get_edges())
+        # R = (E(T1) u E(T2)) \ I: the union of both parents' edges minus the
+        # intersection edges, which are already fixed into self.child above
+        union_minus_intersection_edges = [e for e in tree1.get_edges() if not tree2.has_edge(e.v, e.w)]
 
         for e in tree2.get_edges():
             if tree1.has_edge(e.v, e.w):
                 self.child.add_edge(e.copy(), check_exists = False)
             else:
-                union_edges.append(e)
+                union_minus_intersection_edges.append(e)
 
-        # candidate pool for relinking: the union of both parents plus a
-        # linear number of additional randomly sampled edges
+        # candidate pool for relinking: R plus a linear number of additional
+        # randomly sampled edges
         sampled_edges = self.edge_sampler.sample(self.sigma)
-        candidate_edges = union_edges + sampled_edges
+        candidate_edges = union_minus_intersection_edges + sampled_edges
 
         # sample random weight vector
         lambdas = self.weight_sampler.sample(q)[0]
@@ -831,12 +833,13 @@ class XORCrossover(Recombinator):
     """
     XOR Crossover (XOR) recombination operator.
 
-    Edges shared by both parent spanning trees (the intersection) are inherited
-    directly into the child and stay fixed. The remaining edges needed to
-    complete the spanning tree are chosen by Kruskal-relinking over a candidate
-    pool made up of the symmetric difference of both parents' edges plus a linear
-    (in the number of nodes) number of additional randomly sampled edges from the
-    source graph, scalarised with a random weight vector.
+    Unlike IntersectionCrossover, the intersection of both parent spanning trees
+    is not fixed upfront: relinking starts from the empty graph (V, {}), using a
+    candidate pool made up of the symmetric difference of both parents' edges
+    plus a linear (in the number of nodes) number of additional randomly sampled
+    edges from the source graph, scalarised with a random weight vector. Only if
+    the symmetric difference alone would not be able to connect all nodes are
+    the intersection edges added back into the candidate pool as a fallback.
 
     Spanning tree constraints: not supported.
     """
@@ -890,22 +893,35 @@ class XORCrossover(Recombinator):
 
         q = tree1.get_q()
 
-        # child starts out empty; edges present in both parents (the
-        # intersection) are inherited directly and stay fixed from here on
+        # unlike IntersectionCrossover, the intersection is NOT fixed upfront
+        # here; relinking starts from the empty graph (V, {}) and the
+        # intersection edges are only added back as candidates further below
+        # if the symmetric difference alone cannot connect all nodes
         self.child = tree1.copy(copy_edges = False)
 
         # symmetric difference of both parents' edges: edges present in
         # exactly one of the two parent trees
+        intersection_edges = []
         sym_diff_edges = [e for e in tree1.get_edges() if not tree2.has_edge(e.v, e.w)]
 
         for e in tree2.get_edges():
             if tree1.has_edge(e.v, e.w):
-                self.child.add_edge(e.copy(), check_exists = False)
+                intersection_edges.append(e)
             else:
                 sym_diff_edges.append(e)
 
-        # candidate pool for relinking: the symmetric difference of both
-        # parents plus a linear number of additional randomly sampled edges
+        # if (V, sym_diff_edges) is not connected, the symmetric difference
+        # alone cannot span all nodes -- fall back to also offering the
+        # intersection edges as candidates
+        sym_diff_graph = tree1.copy(copy_edges = False)
+        for e in sym_diff_edges:
+            sym_diff_graph.add_edge(e.copy(), check_exists = False)
+        if not CC(sym_diff_graph).is_connected():
+            sym_diff_edges = sym_diff_edges + intersection_edges
+
+        # candidate pool for relinking: the (possibly extended) symmetric
+        # difference of both parents plus a linear number of additional
+        # randomly sampled edges
         sampled_edges = self.edge_sampler.sample(self.sigma)
         candidate_edges = sym_diff_edges + sampled_edges
 
