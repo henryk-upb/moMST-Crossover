@@ -5,10 +5,9 @@ import sys
 
 import pandas as pd
 
-# expyrimenter is vendored under external/expyrimenter/ (see
-# external/expyrimenter/VENDORED_FROM.md) -- it is its own top-level
-# "Experiments" package, distinct from this repo's own Experiments/ folder,
-# so it needs its own sys.path entry rather than living at the repo root.
+# expyrimenter is a git submodule under external/expyrimenter/ (see
+# .gitmodules) -- it is its own top-level "Experiments" package, so it
+# needs its own sys.path entry rather than living at the repo root.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "external", "expyrimenter"))
 from Experiments.Registry import Registry
 from Experiments.Backend import JoblibRunnerBackend, SequentialRunnerBackend
@@ -21,30 +20,6 @@ from EA.utils.EdgeOrderer import EdgeOrderer, EdgeOrdererExact
 from Graph.generators.RandomSpanningTreeGenerator import RandomSpanningTreeGenerator
 from EA.Algorithms import NSGA2
 
-'''
-CROSSOVER EXPERIMENTS (expyrimenter edition)
-===
-
-Same experiment as the original crossover_runner.py, but job management,
-parameter-grid generation and parallel execution are now delegated to
-Jakob Bossek's exPyrimenter package (https://github.com/jakobbossek/expyrimenter)
-instead of hand-rolled CSV files (parameters/ex05.csv) + joblib.Parallel.
-
-What changed compared to the original script:
-* ex05_parameters.py is gone: reg.add_jobs(...) builds the full factorial
-  design (and writes it to <REGISTRY_PATH>/design.csv, replacing
-  parameters/ex05.csv).
-* Experiments/utils.py (read_setup) is gone: the registry hands
-  (jobid, params) straight to the runner function.
-* Output layout changes from results/approximations/ex05/<jobid>/ to
-  <REGISTRY_PATH>/experiments/<jobid>/ -- this still works unchanged with
-  the existing R import code (ex04_analyse.R's import_approximations /
-  import_runtimes both use list.files(..., recursive = TRUE), so the
-  extra "experiments" nesting level is transparent to them).
-* The "common random numbers" trick from the original script (seed derived
-  from repl only, so repl=k uses the same seed across all crossover
-  operators) is preserved 1:1 inside the runner.
-'''
 
 REGISTRY_PATH = "results/approximations/ex05"
 

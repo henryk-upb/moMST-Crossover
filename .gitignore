@@ -6,3 +6,4 @@ figures/pareto_progress/
 figures/hv_analysis/
 
 results/approximations/**/*.csv
+results/approximations/ex05/

@@ -7,10 +7,9 @@ import time
 
 import pandas as pd
 
-# expyrimenter is vendored under external/expyrimenter/ (see
-# external/expyrimenter/VENDORED_FROM.md) -- it is its own top-level
-# "Experiments" package, distinct from this repo's own Experiments/ folder,
-# so it needs its own sys.path entry rather than living at the repo root.
+# expyrimenter is a git submodule under external/expyrimenter/ (see
+# .gitmodules) -- it is its own top-level "Experiments" package, so it
+# needs its own sys.path entry rather than living at the repo root.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "external", "expyrimenter"))
 from Experiments.Registry import Registry
 from Experiments.Backend import JoblibRunnerBackend
@@ -20,21 +19,7 @@ from EA.Operators import USGMutator, SGSSimplifiedMutator, USGMutatorWithPresort
 from Graph.generators.RandomSpanningTreeGenerator import RandomSpanningTreeGenerator
 from EA.Algorithms import NSGA2
 
-'''
-MUTATION EXPERIMENTS (expyrimenter edition)
-===
 
-Same migration as crossover_runner.py: expyrimenter's Registry replaces
-ex04_parameters.py (design generation) + ex04_executer.R (R-driven,
-subprocess-per-job dispatch via parallelMap). Everything -- design,
-parallel execution, status tracking -- now happens in this one script;
-ex04_executer.R is no longer needed.
-
-Output layout: results/approximations/ex04/experiments/<jobid>/{pf,trajectory,runtime}.csv
--- one folder level deeper than before, but ex04_analyse.R's
-import_approximations()/import_runtimes() already list.files(..., recursive
-= TRUE), so nothing there needs to change (verified against the new layout).
-'''
 
 REGISTRY_PATH = "results/approximations/ex04"
 
