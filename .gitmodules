@@ -1,0 +1,3 @@
+[submodule "external/expyrimenter"]
+	path = external/expyrimenter
+	url = https://github.com/jakobbossek/expyrimenter.git
