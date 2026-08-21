@@ -109,7 +109,7 @@ def build_registry(registry_path, instances, crossovers, repls, predicate=None, 
 
 if __name__ == "__main__":
     # ---- full-scale design (mirrors the old ex05_parameters.py grid) ----
-    path_to_instances = "instances/50"
+    path_to_instances = "instances/100"
     instances = [os.path.join(path_to_instances, f) for f in os.listdir(path_to_instances)]
     crossovers = ["UNION", "INTER", "XOR"]
     repls = list(range(1, 11))  # 10 independent reps, as in ex05_parameters.py

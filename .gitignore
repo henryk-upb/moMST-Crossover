@@ -2,8 +2,6 @@ __pycache__/
 *.pyc
 *.pyo
 
-figures/pareto_progress/
-figures/hv_analysis/
-
-results/approximations/**/*.csv
-results/approximations/ex05/
+figures/
+results/approximations/
+analysis_log/
