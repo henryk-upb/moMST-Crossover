@@ -133,7 +133,9 @@ if __name__ == "__main__":
     path_to_instances = "instances/50"
     instances = [os.path.join(path_to_instances, f) for f in os.listdir(path_to_instances)]
     crossovers = ["UNION", "INTER", "XOR"]
-    mutators = ["USGS-F", "USGS-PRE", "SGS", "IF-G", "IF-L"]
+    # restricted to USGS-F/USGS-PRE: ex06's cross-instance analysis found these two to
+    # consistently outperform SGS/IF-G/IF-L, so the older mutators are no longer run
+    mutators = ["USGS-F", "USGS-PRE"]
     repls = list(range(1, 11))  # 10 independent reps, as in the other ex0X designs
     P_CROSSOVER = 0.5
 

@@ -61,7 +61,7 @@ nie mit den Ergebnissen eines anderen Runners/Experiments vermischt werden
 verwenden koennen und sonst gleiche instance_label-Ordner kollidieren wuerden.
 
 Nutzung:
-  python analyze_hypervolume.py results/approximations/ex05 \
+  python analysis/analyze_hypervolume.py results/approximations/ex05 \
       --instance instances/50/CLASS1_50_1225_0_2_UNG_CEG_RWG-RWG_1.graph \
       --note "XOR-CX Bugfix: Algorithmus 5 statt fixierter Schnittmenge"
 '''
@@ -483,6 +483,52 @@ def archive_run(archive_root, experiment_label, instance_label, algo_col, report
         for algo, row in desc.iterrows():
             f.write(f"| [{timestamp}]({rel_dir}/summary.md) | {commit_label} | {instance_label} | {algo} "
                      f"| {row['median']:.2f} | {row['mean']:.2f} | {int(row['count'])} | {note or ''} |\n")
+
+    return entry_dir
+
+
+def archive_generic_run(archive_root, experiment_label, entry_label, title, note, copy_paths,
+                         changelog_header, row_template, changelog_rows):
+    '''Reusable version of archive_run() for analysis scripts other than this module's own HV
+    summary/desc format (analyze_pf_and_convergence.py, analyze_quality_by_size.py, ...). Copies
+    copy_paths into a timestamped, never-overwritten entry under archive_root/experiment_label/,
+    writes a summary.md, and appends one row per dict in changelog_rows to
+    archive_root/experiment_label/CHANGELOG.md (created with changelog_header if new). Each row
+    dict is merged with {timestamp, rel_dir, commit_label, note} and formatted into row_template.'''
+    commit, subject, diffstat = get_git_info()
+    now = datetime.now()
+    timestamp = now.strftime('%Y-%m-%d_%H%M%S')
+    commit_label = f"{commit}-dirty" if diffstat else (commit or "no-git")
+
+    archive_root = os.path.join(archive_root, experiment_label)
+    entry_dir = os.path.join(archive_root, f"{timestamp}_{commit_label}_{entry_label}")
+    os.makedirs(entry_dir, exist_ok = True)
+    for fpath in copy_paths:
+        if fpath and os.path.exists(fpath):
+            shutil.copy(fpath, entry_dir)
+
+    with open(os.path.join(entry_dir, 'summary.md'), 'w') as f:
+        f.write(f"# {title}: {entry_label}\n\n")
+        f.write(f"- Experiment: `{experiment_label}`\n")
+        f.write(f"- Datum: {now.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"- Git-Commit: `{commit or 'unbekannt'}` ({subject})"
+                + (" -- **uncommitted changes!**\n" if diffstat else "\n"))
+        if note:
+            f.write(f"\n## Was hat sich seit dem letzten Eintrag geaendert\n\n{note}\n")
+        if diffstat:
+            f.write(f"\n## Uncommitted Aenderungen zum Zeitpunkt des Laufs\n\n```\n{diffstat}\n```\n")
+
+    index_path = os.path.join(archive_root, 'CHANGELOG.md')
+    is_new = not os.path.exists(index_path)
+    with open(index_path, 'a') as f:
+        if is_new:
+            f.write(f"# {title} -- Verlauf\n\n")
+            f.write(changelog_header)
+        rel_dir = os.path.relpath(entry_dir, archive_root)
+        for row in changelog_rows:
+            fields = {'timestamp': timestamp, 'rel_dir': rel_dir, 'commit_label': commit_label,
+                      'note': note or '', **row}
+            f.write(row_template.format(**fields) + "\n")
 
     return entry_dir
 

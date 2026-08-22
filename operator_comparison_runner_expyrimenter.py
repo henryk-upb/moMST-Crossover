@@ -32,24 +32,28 @@ separate registries with different design.csv schemas ("crossover" vs.
 "mutator" column), this runner puts all operators into a single "operator"
 column of ONE registry, directly comparable side by side (same instances,
 same common-random-number seeds per repl) via a single
-    analyze_hypervolume.py results/approximations/ex07 --algo-col operator
+    analysis/analyze_hypervolume.py results/approximations/ex07 --algo-col operator
 call across all of them at once. Three modes:
   * CROSSOVER_OPERATORS: pure crossover-only run (no mutator), like ex05.
   * MUTATION_OPERATORS: pure mutation-only run (no crossover), like ex04.
   * HYBRID_OPERATORS: crossover AND mutator together, governed by NSGA2's
     p_crossover (see EA/Algorithms.py), like crossover_mutation_runner_
-    expyrimenter.py -- but restricted to USGS-PRE, the mutator ex06's
-    cross-instance analysis found to pair best with crossover, one hybrid
-    per crossover type (e.g. "UNION+USGS-PRE").
+    expyrimenter.py -- one hybrid per crossover type x mutator (e.g.
+    "UNION+USGS-PRE").
+
+Mutation operators are restricted to USGS-F and USGS-PRE (both for
+MUTATION_OPERATORS and as hybrid partners): ex06's cross-instance analysis
+found these two to consistently outperform SGS/IF-G/IF-L, so the older
+operators are no longer run.
 '''
 
 REGISTRY_PATH = "results/approximations/ex07"
 
 CROSSOVER_OPERATORS = ["UNION", "INTER", "XOR"]
-MUTATION_OPERATORS = ["USGS-F", "USGS-PRE", "SGS", "IF-G", "IF-L"]
-HYBRID_MUTATOR = "USGS-PRE"
+MUTATION_OPERATORS = ["USGS-F", "USGS-PRE"]
+HYBRID_MUTATORS = ["USGS-F", "USGS-PRE"]
 HYBRID_P_CROSSOVER = 0.5
-HYBRID_OPERATORS = [f"{c}+{HYBRID_MUTATOR}" for c in CROSSOVER_OPERATORS]
+HYBRID_OPERATORS = [f"{c}+{m}" for c in CROSSOVER_OPERATORS for m in HYBRID_MUTATORS]
 
 
 def setup_initializer(graph):
