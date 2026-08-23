@@ -6,6 +6,7 @@ from Graph.algorithms.MST import KruskalRelink
 from Graph.algorithms.BFS import BFS
 from Graph.algorithms.DFS import DFS
 from Graph.algorithms.CC import CC
+from Graph.utils.UnionFind import UnionFind
 from Graph.generators.RandomSpanningTreeGenerator import RandomSpanningTreeGenerator
 from EA.utils.RandomWeightSampler import WeightSampler, RandomWeightSampler, EquidistantWeightSampler
 from EA.utils.EdgeSampler import EdgeSampler, EdgeSamplerUniform
@@ -485,6 +486,440 @@ class InsertionFirstLocalMutator(Mutator):
         # self.child.plot()
         return self.child
 
+class SGSECJMutator(Mutator):
+    """
+    Local version of the scalarised sub-graph mutation operator (SGS) proposed in [1, 2].
+
+    Note: this is the re-implementation of the operator as it was used for experimentation
+    in [2].
+
+    The algorithm extracts an induced sub-graph of the input tree adopting limited BFS. It next calculates
+    an MST of the sub-graph by first reducing the edge weights to scalar values by a weighted-sum approach
+    and applying Kruskal's single-objective MST
+
+    [1] J. Bossek and C. Grimme, ‘A pareto-beneficial sub-tree mutation for the multi-criteria minimum spanning tree
+    problem’, in 2017 IEEE Symposium Series on Computational Intelligence (SSCI), Nov. 2017, pp. 1–8.
+    doi: 10.1109/SSCI.2017.8285183.
+
+    [2] J. Bossek and C. Grimme, ‘On single-objective sub-graph-based mutation for solving the bi-objective minimum
+    spanning tree problem’, Evolutionary Computation, 2023. (under review)
+
+    Spanning tree constraints: not supported.
+    """
+
+    def __init__(
+        self,
+        graph: Graph,
+        sigma: int | None,
+        traversal_method: str = 'bfs',
+        edge_orderer: EdgeOrderer | None = None,
+        weight_sampler: WeightSampler | None = None,
+        fixed: bool = False
+    ) -> None:
+        """
+        Initialise an SG object.
+
+        Args:
+            graph (Graph): Input graph.
+            sigma (int): Maximum number of nodes for the limited BFS call. Must
+                be between 3 and |V|. In every application of the operator a number
+                in {3, ..., sigma} is sampled at random for the sub-graph size.
+            traversal_method (str): Either 'bfs' or 'dfs' for {breadth,depth} first
+                search respectively. This decides on how the sub-graph is build.
+                Default is 'bfs'.
+            edge_orderer (EdgeOrderer): strategy for ordering the edges before passing down to
+                KruskalRelink. Defaults to an instance of EdgeOrdererExact.
+            sampler (RandomWeightSampler): an object of class RandomWeightSampler
+                which is used to sample weights for the scalarisation part.
+            fixed (bool): is the number of randomly added edges an upper bound or fixed?
+                Default is False.
+        """
+        super().__init__()
+
+        assert isinstance(graph, Graph)
+        assert 3 <= sigma <= graph.get_n()
+        assert traversal_method in ['bfs', 'dfs']
+
+        self.graph = graph
+        self.sigma = sigma
+        self.traversal_method = BFS if traversal_method == 'bfs' else DFS
+        self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
+        self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
+
+        # book-keeping of visited nodes
+        self.visited = [False] * (graph.get_n() + 1)
+        self.fixed = fixed
+
+    def create(self, tree: Graph, n_children: int = 1) -> Graph | list[Graph]:
+        """
+        Produce a new spanning tree based on the SGS operator logic.
+
+        Args:
+            tree (Graph): parent spanning tree.
+            n_children (int): number of children. Values other than the default 1
+                are not supported by this operator.
+
+        Returns:
+            A spanning tree.
+        """
+        n = tree.get_n()
+        q = tree.get_q()
+
+        # sample start node for limited BFS call
+        start_node = random.randint(1, n)
+
+        # override if parameter is passed to this method
+        sigma = self.sigma if self.sigma is not None else int(self.graph.get_n() / 2)
+
+        # number of nodes for limited BFS
+        max_visited = sigma if self.fixed else random.randint(3, self.sigma)
+
+        # obtain selected nodes (these are used for subgraph construction)
+        selected_nodes = self.traversal_method(
+            tree, start = start_node, max_visited = max_visited
+        ).get_queued_nodes()
+
+        self.set_stats({'no_selected_nodes': max_visited})
+
+        # temporarily set the visited flag for all selected nodes
+        for v in selected_nodes:
+            self.visited[v] = True
+
+        assert sum(self.visited) == len(selected_nodes)
+
+        # make a copy of the source tree
+        self.child = tree.copy(copy_edges = True)
+
+        # now remove edges from the copy. This takes O(s n) and not O(s log n)
+        # as claimed since we use list and not balanced trees
+        for e in self.child.get_edges():
+            if self.visited[e.v] and self.visited[e.w]:
+                self.child.delete_edge(e.v, e.w)
+
+        # get induced sub-graph
+        induced_graph = Graph.induced(self.graph, selected_nodes)
+        # induced_graph.plot()
+
+        # sample random weight vector
+        lambdas = self.weight_sampler.sample(q)[0]
+
+        # calculate MST on induced sub-graph and extract its edges
+        relevant_edges = self.edge_orderer.order(induced_graph.get_edges(), lambdas)
+        induced_graph_mst = KruskalRelink(
+            induced_graph, relevant_edges
+        ).solve().get_solution()
+        # G_induced_mst.plot()
+
+        new_edges = induced_graph_mst.get_edges()
+        # T.plot()
+        # self.child.plot()
+
+        # finally copy all edges from the MST on the sub-graph
+        # and map their node IDs (1, ..., max_visited) to the original set
+        # selected_nodes
+        for e in new_edges:
+            v_induced, w_induced, cost = e.v, e.w, e.get_cost()
+            # map back to original node Ids
+            v, w = selected_nodes[v_induced - 1], selected_nodes[w_induced - 1]
+            self.child.add_edge(Edge(v, w, cost), check_exists = False)
+
+        # self.child.plot()
+
+        assert self.child.is_spanning_tree()
+
+        # reset visited flag in O(|selected_nodes|)
+        for v in selected_nodes:
+            self.visited[v] = False
+
+        assert sum(self.visited) == 0
+
+        return self.child
+
+
+
+class SGSImprovedMutator(Mutator):
+    """
+    Improved ECJ-version of the local version of the scalarised sub-graph mutation operator (SGS) proposed in [1, 2].
+
+    Note: the improvement is that edges are no longer 'actively' deleted from the
+    copy of the spanning tree. Instead a new forest is created.
+
+    The algorithm extracts an induced sub-graph of the input tree adopting limited BFS. It next calculates
+    an MST of the sub-graph by first reducing the edge weights to scalar values by a weighted-sum approach
+    and applying Kruskal's single-objective MST
+
+    [1] J. Bossek and C. Grimme, ‘A pareto-beneficial sub-tree mutation for the multi-criteria minimum spanning tree
+    problem’, in 2017 IEEE Symposium Series on Computational Intelligence (SSCI), Nov. 2017, pp. 1–8.
+    doi: 10.1109/SSCI.2017.8285183.
+
+    [2] J. Bossek and C. Grimme, ‘On single-objective sub-graph-based mutation for solving the bi-objective minimum
+    spanning tree problem’, Evolutionary Computation, 2023. (under review)
+
+    Spanning tree constraints: not supported.
+    """
+
+    def __init__(
+        self,
+        graph: Graph,
+        sigma: int | None,
+        traversal_method: str = 'bfs',
+        edge_orderer: EdgeOrderer | None = None,
+        weight_sampler: WeightSampler | None = None,
+        fixed: bool = False
+    ) -> None:
+        """
+        Initialise an SG object.
+
+        Args:
+            graph (Graph): Input graph.
+            sigma (int): Maximum number of nodes for the limited BFS call. Must
+                be between 3 and |V|. In every application of the operator a number
+                in {3, ..., sigma} is sampled at random for the sub-graph size.
+            traversal_method (str): Either 'bfs' or 'dfs' for {breadth,depth} first
+                search respectively. This decides on how the sub-graph is build.
+                Default is 'bfs'.
+            edge_orderer (EdgeOrderer): strategy for ordering the edges before passing down to
+                KruskalRelink. Defaults to an instance of EdgeOrdererExact.
+            sampler (RandomWeightSampler): an object of class RandomWeightSampler
+                which is used to sample weights for the scalarisation part.
+            fixed (bool): is the number of randomly added edges an upper bound or fixed?
+                Default is False.
+        """
+        super().__init__()
+
+        assert isinstance(graph, Graph)
+        assert 3 <= sigma <= graph.get_n()
+        assert traversal_method in ['bfs', 'dfs']
+
+        self.graph = graph
+        self.sigma = sigma
+        self.traversal_method = BFS if traversal_method == 'bfs' else DFS
+        self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
+        self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
+
+        # book-keeping of visited nodes
+        self.visited = [False] * (graph.get_n() + 1)
+        self.fixed = fixed
+
+    def create(self, tree: Graph, n_children: int = 1) -> Graph | list[Graph]:
+        """
+        Produce a new spanning tree based on the SGS operator logic.
+
+        Args:
+            tree (Graph): parent spanning tree.
+            n_children (int): number of children. Values other than the default 1
+                are not supported by this operator.
+
+        Returns:
+            A spanning tree.
+        """
+        n = tree.get_n()
+        q = tree.get_q()
+
+        # sample start node for limited BFS call
+        start_node = random.randint(1, n)
+
+        # override if parameter is passed to this method
+        sigma = self.sigma if self.sigma is not None else int(self.graph.get_n() / 2)
+
+        # number of nodes for limited BFS
+        max_visited = sigma if self.fixed else random.randint(3, self.sigma)
+
+        # obtain selected nodes (these are used for subgraph construction)
+        selected_nodes = self.traversal_method(
+            tree, start = start_node, max_visited = max_visited
+        ).get_queued_nodes()
+
+        self.set_stats({'no_selected_nodes': max_visited})
+
+        # temporarily set the visited flag for all selected nodes
+        for v in selected_nodes:
+            self.visited[v] = True
+
+        assert sum(self.visited) == len(selected_nodes)
+
+        # get induced sub-graph
+        induced_graph = Graph.induced(self.graph, selected_nodes)
+        # induced_graph.plot()
+
+        # sample random weight vector
+        lambdas = self.weight_sampler.sample(q)[0]
+
+        # calculate MST on induced sub-graph and extract its edges
+        relevant_edges = self.edge_orderer.order(induced_graph.get_edges(), lambdas)
+        induced_graph_mst = KruskalRelink(
+            induced_graph, relevant_edges
+        ).solve().get_solution()
+        # G_induced_mst.plot()
+
+        new_edges = induced_graph_mst.get_edges()
+        parent_edges = tree.get_edges()
+        # T.plot()
+
+        # prepare empty tree
+        self.child = tree.copy(copy_edges = False)
+
+        # self.child.plot()
+
+        # now copy all edges from parent tree where at least one end point is not
+        # in the induced sub-graph
+        for e in parent_edges:
+            if (not self.visited[e.v]) or not self.visited[e.w]:
+                self.child.add_edge(e.copy(), check_exists = False)
+
+        # self.child.plot()
+
+        # finally copy all edges from the MST on the sub-graph
+        # and map their node IDs (1, ..., max_visited) to the original set
+        # selected_nodes
+        for e in new_edges:
+            v_induced, w_induced, cost = e.v, e.w, e.get_cost()
+            # map back to original node Ids
+            v, w = selected_nodes[v_induced - 1], selected_nodes[w_induced - 1]
+            self.child.add_edge(Edge(v, w, cost), check_exists = False)
+
+        # self.child.plot()
+
+        assert self.child.is_spanning_tree()
+
+        # reset visited flag in O(|selected_nodes|)
+        for v in selected_nodes:
+            self.visited[v] = False
+
+        assert sum(self.visited) == 0
+
+        return self.child
+
+
+class SGSSimplifiedMutator(Mutator):
+    """
+    SIMPLIFIED local version of the scalarised sub-graph mutation operator (SGS) proposed in [1, 2].
+
+    The algorithm extracts an induced sub-graph of the input tree adopting limited BFS. It next calculates
+    an MST of the sub-graph by first reducing the edge weights to scalar values by a weighted-sum approach
+    and applying Kruskal's single-objective MST
+
+    [1] J. Bossek and C. Grimme, ‘A pareto-beneficial sub-tree mutation for the multi-criteria minimum spanning tree
+    problem’, in 2017 IEEE Symposium Series on Computational Intelligence (SSCI), Nov. 2017, pp. 1–8.
+    doi: 10.1109/SSCI.2017.8285183.
+
+    [2] J. Bossek and C. Grimme, ‘On single-objective sub-graph-based mutation for solving the bi-objective minimum
+    spanning tree problem’, Evolutionary Computation, 2023. (under review)
+
+    Spanning tree constraints: not supported.
+    """
+
+    def __init__(
+        self,
+        graph: Graph,
+        sigma: int | None,
+        traversal_method: str = 'bfs',
+        edge_orderer: EdgeOrderer | None = None,
+        weight_sampler: WeightSampler | None = None,
+        fixed: bool = False
+    ) -> None:
+        """
+        Initialise an SG object.
+
+        Args:
+            graph (Graph): Input graph.
+            sigma (int): Maximum number of nodes for the limited BFS call. Must
+                be between 3 and |V|. In every application of the operator a number
+                in {3, ..., sigma} is sampled at random for the sub-graph size.
+            traversal_method (str): Either 'bfs' or 'dfs' for {breadth,depth} first
+                search respectively. This decides on how the sub-graph is build.
+                Default is 'bfs'.
+            edge_orderer (EdgeOrderer): strategy for ordering the edges before passing down to
+                KruskalRelink. Defaults to an instance of EdgeOrdererExact.
+            sampler (RandomWeightSampler): an object of class RandomWeightSampler
+                which is used to sample weights for the scalarisation part.
+            fixed (bool): is the number of randomly added edges an upper bound or fixed?
+                Default is False.
+        """
+        super().__init__()
+
+        assert isinstance(graph, Graph)
+        assert 3 <= sigma <= graph.get_n()
+        assert traversal_method in ['bfs', 'dfs']
+
+        self.graph = graph
+        self.sigma = sigma
+        self.traversal_method = BFS if traversal_method == 'bfs' else DFS
+        self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
+        self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
+
+        # book-keeping of visited nodes
+        self.visited = [False] * (graph.get_n() + 1)
+        self.fixed = fixed
+
+    def create(self, tree: Graph, n_children: int = 1) -> Graph | list[Graph]:
+        """
+        Produce a new spanning tree based on the SGS operator logic.
+
+        Args:
+            tree (Graph): parent spanning tree.
+            n_children (int): number of children. Values other than the default 1
+                are not supported by this operator.
+
+        Returns:
+            A spanning tree.
+        """
+        n = tree.get_n()
+
+        # sample start node for limited search call
+        start_node = random.randint(1, n)
+
+        # override if parameter is passed to this method
+        sigma = self.sigma if self.sigma is not None else int(self.graph.get_n() / 2)
+
+        # number of nodes for limited search
+        max_visited = sigma if self.fixed else random.randint(3, sigma)
+
+        self.set_stats({'no_selected_nodes': max_visited})
+
+        # obtain selected nodes (these are used for subgraph construction)
+        selected_nodes = self.traversal_method(
+            tree, start = start_node, max_visited = max_visited
+        ).get_queued_nodes()
+
+        # temporarily set the visited flag for all selected nodes
+        for v in selected_nodes:
+            self.visited[v] = True
+        assert sum(self.visited) == len(selected_nodes)
+
+        # copy of parent tree
+        initial_tree = tree.copy(copy_edges = False)
+        # copy only edges where at most one incident node was selected
+        for e in tree:
+            if (not self.visited[e.v]) or (not self.visited[e.w]):
+                initial_tree.add_edge(e.copy(), check_exists = False)
+
+        # now prepare the "relevant" edges
+        relevant_edges = [
+            e for e in self.graph.get_edges(selected_nodes)
+            if self.visited[e.v] and self.visited[e.w]
+        ]
+
+        # sample random weight vector
+        lambdas = self.weight_sampler.sample(tree.get_q())[0]
+
+        relevant_edges = self.edge_orderer.order(relevant_edges, lambdas)
+
+        self.child = KruskalRelink(
+            self.graph, relevant_edges, initial_tree
+        ).solve().get_solution()
+        # self.child.plot()
+
+        assert self.child.is_spanning_tree()
+
+        # reset visited flag in O(|selected_nodes|)
+        for v in selected_nodes:
+            self.visited[v] = False
+
+        assert sum(self.visited) == 0
+
+        return self.child
+
 
 class USGMutator(Mutator):
     """
@@ -940,23 +1375,28 @@ class XORCrossover(Recombinator):
 
         return self.child
 
-class SGSECJMutator(Mutator):
+
+class XORCrossoverAsymmetric(Recombinator):
     """
-    Local version of the scalarised sub-graph mutation operator (SGS) proposed in [1, 2].
+    Asymmetric XOR Crossover (XOR-A) recombination operator.
 
-    Note: this is the re-implementation of the operator as it was used for experimentation
-    in [2].
+    Variant of XORCrossover that breaks the symmetry between both parents.
+    A "dominant" parent is chosen uniformly at random; its full set of
+    exclusive edges (i.e. the edges present in that parent only, not in the
+    other) is inherited into the child unconditionally -- this can never
+    close a cycle on its own, since the edges of a spanning tree are always
+    acyclic. The "losing" parent's exclusive edges are then offered one at a
+    time, in their natural order, and only kept if they do not close a
+    cycle with what has already been fixed. Finally, the spanning tree is
+    completed by relinking over the *entire* union of both parents' edges,
+    ordered by a freshly sampled scalarisation weight vector lambda -- the
+    same mechanism used by Union/Intersection/XORCrossover -- so edges
+    already fixed above are simply skipped and the remaining gaps are
+    filled greedily in lambda-order.
 
-    The algorithm extracts an induced sub-graph of the input tree adopting limited BFS. It next calculates
-    an MST of the sub-graph by first reducing the edge weights to scalar values by a weighted-sum approach
-    and applying Kruskal's single-objective MST
-
-    [1] J. Bossek and C. Grimme, ‘A pareto-beneficial sub-tree mutation for the multi-criteria minimum spanning tree
-    problem’, in 2017 IEEE Symposium Series on Computational Intelligence (SSCI), Nov. 2017, pp. 1–8.
-    doi: 10.1109/SSCI.2017.8285183.
-
-    [2] J. Bossek and C. Grimme, ‘On single-objective sub-graph-based mutation for solving the bi-objective minimum
-    spanning tree problem’, Evolutionary Computation, 2023. (under review)
+    Unlike IntersectionCrossover and XORCrossover, no additional edges are
+    sampled from outside the two parents: the candidate pool stays strictly
+    within E(T1) u E(T2).
 
     Spanning tree constraints: not supported.
     """
@@ -964,300 +1404,109 @@ class SGSECJMutator(Mutator):
     def __init__(
         self,
         graph: Graph,
-        sigma: int | None,
-        traversal_method: str = 'bfs',
         edge_orderer: EdgeOrderer | None = None,
         weight_sampler: WeightSampler | None = None,
-        fixed: bool = False
     ) -> None:
         """
-        Initialise an SG object.
+        Initialise an XORCrossoverAsymmetric object.
 
         Args:
-            graph (Graph): Input graph.
-            sigma (int): Maximum number of nodes for the limited BFS call. Must
-                be between 3 and |V|. In every application of the operator a number
-                in {3, ..., sigma} is sampled at random for the sub-graph size.
-            traversal_method (str): Either 'bfs' or 'dfs' for {breadth,depth} first
-                search respectively. This decides on how the sub-graph is build.
-                Default is 'bfs'.
-            edge_orderer (EdgeOrderer): strategy for ordering the edges before passing down to
-                KruskalRelink. Defaults to an instance of EdgeOrdererExact.
-            sampler (RandomWeightSampler): an object of class RandomWeightSampler
+            graph (Graph): the source graph.
+            edge_orderer (EdgeOrderer): strategy for ordering the completion
+                candidate edges before passing them down to KruskalRelink.
+                Defaults to an instance of EdgeOrdererExact.
+            weight_sampler (WeightSampler): an object of class RandomWeightSampler
                 which is used to sample weights for the scalarisation part.
-            fixed (bool): is the number of randomly added edges an upper bound or fixed?
-                Default is False.
         """
         super().__init__()
 
-        assert isinstance(graph, Graph)
-        assert 3 <= sigma <= graph.get_n()
-        assert traversal_method in ['bfs', 'dfs']
-
         self.graph = graph
-        self.sigma = sigma
-        self.traversal_method = BFS if traversal_method == 'bfs' else DFS
         self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
         self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
 
-        # book-keeping of visited nodes
-        self.visited = [False] * (graph.get_n() + 1)
-        self.fixed = fixed
-
-    def create(self, tree: Graph, n_children: int = 1) -> Graph | list[Graph]:
+    def create(self, tree1: Graph, tree2: Graph) -> Graph:
         """
-        Produce a new spanning tree based on the SGS operator logic.
+        Produce a new spanning tree based on the XORCrossoverAsymmetric logic.
 
         Args:
-            tree (Graph): parent spanning tree.
-            n_children (int): number of children. Values other than the default 1
-                are not supported by this operator.
+            tree1 (Graph): the first parent spanning tree.
+            tree2 (Graph): the second parent spanning tree.
 
         Returns:
             A spanning tree.
         """
-        n = tree.get_n()
-        q = tree.get_q()
+        assert tree1.is_spanning_tree()
+        assert tree2.is_spanning_tree()
 
-        # sample start node for limited BFS call
-        start_node = random.randint(1, n)
+        q = tree1.get_q()
 
-        # override if parameter is passed to this method
-        sigma = self.sigma if self.sigma is not None else int(self.graph.get_n() / 2)
+        # exclusive edges: present in exactly one of the two parents
+        s1 = [e for e in tree1.get_edges() if not tree2.has_edge(e.v, e.w)]
+        s2 = [e for e in tree2.get_edges() if not tree1.has_edge(e.v, e.w)]
 
-        # number of nodes for limited BFS
-        max_visited = sigma if self.fixed else random.randint(3, self.sigma)
+        # pick a "dominant" parent uniformly at random; its exclusive edges
+        # are inherited unconditionally (a subset of a spanning tree is
+        # always acyclic, so this alone can never close a cycle)
+        dominant_edges, other_edges = (s1, s2) if random.random() < 0.5 else (s2, s1)
 
-        # obtain selected nodes (these are used for subgraph construction)
-        selected_nodes = self.traversal_method(
-            tree, start = start_node, max_visited = max_visited
-        ).get_queued_nodes()
+        self.child = tree1.copy(copy_edges = False)
+        for e in dominant_edges:
+            self.child.add_edge(e.copy(), check_exists = False)
 
-        self.set_stats({'no_selected_nodes': max_visited})
-
-        # temporarily set the visited flag for all selected nodes
-        for v in selected_nodes:
-            self.visited[v] = True
-
-        assert sum(self.visited) == len(selected_nodes)
-
-        # make a copy of the source tree
-        self.child = tree.copy(copy_edges = True)
-
-        # now remove edges from the copy. This takes O(s n) and not O(s log n)
-        # as claimed since we use list and not balanced trees
-        for e in self.child.get_edges():
-            if self.visited[e.v] and self.visited[e.w]:
-                self.child.delete_edge(e.v, e.w)
-
-        # get induced sub-graph
-        induced_graph = Graph.induced(self.graph, selected_nodes)
-        # induced_graph.plot()
-
-        # sample random weight vector
-        lambdas = self.weight_sampler.sample(q)[0]
-
-        # calculate MST on induced sub-graph and extract its edges
-        relevant_edges = self.edge_orderer.order(induced_graph.get_edges(), lambdas)
-        induced_graph_mst = KruskalRelink(
-            induced_graph, relevant_edges
-        ).solve().get_solution()
-        # G_induced_mst.plot()
-
-        new_edges = induced_graph_mst.get_edges()
-        # T.plot()
-        # self.child.plot()
-
-        # finally copy all edges from the MST on the sub-graph
-        # and map their node IDs (1, ..., max_visited) to the original set
-        # selected_nodes
-        for e in new_edges:
-            v_induced, w_induced, cost = e.v, e.w, e.get_cost()
-            # map back to original node Ids
-            v, w = selected_nodes[v_induced - 1], selected_nodes[w_induced - 1]
-            self.child.add_edge(Edge(v, w, cost), check_exists = False)
-
-        # self.child.plot()
-
-        assert self.child.is_spanning_tree()
-
-        # reset visited flag in O(|selected_nodes|)
-        for v in selected_nodes:
-            self.visited[v] = False
-
-        assert sum(self.visited) == 0
-
-        return self.child
-
-
-class SGSImprovedMutator(Mutator):
-    """
-    Improved ECJ-version of the local version of the scalarised sub-graph mutation operator (SGS) proposed in [1, 2].
-
-    Note: the improvement is that edges are no longer 'actively' deleted from the
-    copy of the spanning tree. Instead a new forest is created.
-
-    The algorithm extracts an induced sub-graph of the input tree adopting limited BFS. It next calculates
-    an MST of the sub-graph by first reducing the edge weights to scalar values by a weighted-sum approach
-    and applying Kruskal's single-objective MST
-
-    [1] J. Bossek and C. Grimme, ‘A pareto-beneficial sub-tree mutation for the multi-criteria minimum spanning tree
-    problem’, in 2017 IEEE Symposium Series on Computational Intelligence (SSCI), Nov. 2017, pp. 1–8.
-    doi: 10.1109/SSCI.2017.8285183.
-
-    [2] J. Bossek and C. Grimme, ‘On single-objective sub-graph-based mutation for solving the bi-objective minimum
-    spanning tree problem’, Evolutionary Computation, 2023. (under review)
-
-    Spanning tree constraints: not supported.
-    """
-
-    def __init__(
-        self,
-        graph: Graph,
-        sigma: int | None,
-        traversal_method: str = 'bfs',
-        edge_orderer: EdgeOrderer | None = None,
-        weight_sampler: WeightSampler | None = None,
-        fixed: bool = False
-    ) -> None:
-        """
-        Initialise an SG object.
-
-        Args:
-            graph (Graph): Input graph.
-            sigma (int): Maximum number of nodes for the limited BFS call. Must
-                be between 3 and |V|. In every application of the operator a number
-                in {3, ..., sigma} is sampled at random for the sub-graph size.
-            traversal_method (str): Either 'bfs' or 'dfs' for {breadth,depth} first
-                search respectively. This decides on how the sub-graph is build.
-                Default is 'bfs'.
-            edge_orderer (EdgeOrderer): strategy for ordering the edges before passing down to
-                KruskalRelink. Defaults to an instance of EdgeOrdererExact.
-            sampler (RandomWeightSampler): an object of class RandomWeightSampler
-                which is used to sample weights for the scalarisation part.
-            fixed (bool): is the number of randomly added edges an upper bound or fixed?
-                Default is False.
-        """
-        super().__init__()
-
-        assert isinstance(graph, Graph)
-        assert 3 <= sigma <= graph.get_n()
-        assert traversal_method in ['bfs', 'dfs']
-
-        self.graph = graph
-        self.sigma = sigma
-        self.traversal_method = BFS if traversal_method == 'bfs' else DFS
-        self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
-        self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
-
-        # book-keeping of visited nodes
-        self.visited = [False] * (graph.get_n() + 1)
-        self.fixed = fixed
-
-    def create(self, tree: Graph, n_children: int = 1) -> Graph | list[Graph]:
-        """
-        Produce a new spanning tree based on the SGS operator logic.
-
-        Args:
-            tree (Graph): parent spanning tree.
-            n_children (int): number of children. Values other than the default 1
-                are not supported by this operator.
-
-        Returns:
-            A spanning tree.
-        """
-        n = tree.get_n()
-        q = tree.get_q()
-
-        # sample start node for limited BFS call
-        start_node = random.randint(1, n)
-
-        # override if parameter is passed to this method
-        sigma = self.sigma if self.sigma is not None else int(self.graph.get_n() / 2)
-
-        # number of nodes for limited BFS
-        max_visited = sigma if self.fixed else random.randint(3, self.sigma)
-
-        # obtain selected nodes (these are used for subgraph construction)
-        selected_nodes = self.traversal_method(
-            tree, start = start_node, max_visited = max_visited
-        ).get_queued_nodes()
-
-        self.set_stats({'no_selected_nodes': max_visited})
-
-        # temporarily set the visited flag for all selected nodes
-        for v in selected_nodes:
-            self.visited[v] = True
-
-        assert sum(self.visited) == len(selected_nodes)
-
-        # get induced sub-graph
-        induced_graph = Graph.induced(self.graph, selected_nodes)
-        # induced_graph.plot()
-
-        # sample random weight vector
-        lambdas = self.weight_sampler.sample(q)[0]
-
-        # calculate MST on induced sub-graph and extract its edges
-        relevant_edges = self.edge_orderer.order(induced_graph.get_edges(), lambdas)
-        induced_graph_mst = KruskalRelink(
-            induced_graph, relevant_edges
-        ).solve().get_solution()
-        # G_induced_mst.plot()
-
-        new_edges = induced_graph_mst.get_edges()
-        parent_edges = tree.get_edges()
-        # T.plot()
-
-        # prepare empty tree
-        self.child = tree.copy(copy_edges = False)
-
-        # self.child.plot()
-
-        # now copy all edges from parent tree where at least one end point is not
-        # in the induced sub-graph
-        for e in parent_edges:
-            if (not self.visited[e.v]) or not self.visited[e.w]:
+        # the "losing" parent's exclusive edges get one shot each, in their
+        # natural order, and are only kept if they do not close a cycle
+        # with the edges already fixed above. Done manually via a plain
+        # union-find (rather than KruskalRelink.solve()) since the result
+        # is deliberately allowed to stay an incomplete forest here -- the
+        # completion step below closes any remaining gaps, and
+        # KruskalRelink.solve() unconditionally asserts a full spanning
+        # tree at the end of each call.
+        ccs = CC(self.child)
+        uf = UnionFind(self.graph.get_n(), ccs.get_components())
+        for e in other_edges:
+            if uf.union(e.v, e.w):
                 self.child.add_edge(e.copy(), check_exists = False)
 
-        # self.child.plot()
+        # complete the spanning tree: offer the entire union of both
+        # parents' edges again, ordered by a freshly sampled scalarisation
+        # weight vector lambda; edges already fixed above are simply
+        # skipped by the underlying union-find
+        union_edges = tree1.copy()
+        for e in tree2.get_edges():
+            union_edges.add_edge(e.copy(), check_exists = True)
 
-        # finally copy all edges from the MST on the sub-graph
-        # and map their node IDs (1, ..., max_visited) to the original set
-        # selected_nodes
-        for e in new_edges:
-            v_induced, w_induced, cost = e.v, e.w, e.get_cost()
-            # map back to original node Ids
-            v, w = selected_nodes[v_induced - 1], selected_nodes[w_induced - 1]
-            self.child.add_edge(Edge(v, w, cost), check_exists = False)
+        lambdas = self.weight_sampler.sample(q)[0]
+        relevant_edges = self.edge_orderer.order(union_edges.get_edges(), lambdas)
 
-        # self.child.plot()
+        self.child = KruskalRelink(
+            self.graph,
+            relevant_edges,
+            self.child,
+        ).solve().get_solution()
 
         assert self.child.is_spanning_tree()
-
-        # reset visited flag in O(|selected_nodes|)
-        for v in selected_nodes:
-            self.visited[v] = False
-
-        assert sum(self.visited) == 0
 
         return self.child
 
 
-class SGSSimplifiedMutator(Mutator):
+class XORCrossoverPrioritized(Recombinator):
     """
-    SIMPLIFIED local version of the scalarised sub-graph mutation operator (SGS) proposed in [1, 2].
+    Prioritized XOR Crossover (XOR-P) recombination operator.
 
-    The algorithm extracts an induced sub-graph of the input tree adopting limited BFS. It next calculates
-    an MST of the sub-graph by first reducing the edge weights to scalar values by a weighted-sum approach
-    and applying Kruskal's single-objective MST
+    Simplified, deterministic variant of XORCrossoverAsymmetric that drops
+    the random "dominant parent" choice in favour of a fixed priority order:
+    relinking starts from the empty graph (V, {}) and is offered a single
+    priority list R = S1 ++ S2 ++ sort(I, lambda), where S1/S2 are the edges
+    exclusive to tree1/tree2 respectively and I = E(T1) n E(T2) is the
+    shared (intersection) block, itself ordered by a freshly sampled
+    scalarisation weight vector lambda. In other words: tree1's exclusive
+    edges always get first refusal, then tree2's, and only then the shared
+    edges (in lambda-order) are used to close any remaining gaps -- all in
+    a single KruskalRelink pass.
 
-    [1] J. Bossek and C. Grimme, ‘A pareto-beneficial sub-tree mutation for the multi-criteria minimum spanning tree
-    problem’, in 2017 IEEE Symposium Series on Computational Intelligence (SSCI), Nov. 2017, pp. 1–8.
-    doi: 10.1109/SSCI.2017.8285183.
-
-    [2] J. Bossek and C. Grimme, ‘On single-objective sub-graph-based mutation for solving the bi-objective minimum
-    spanning tree problem’, Evolutionary Computation, 2023. (under review)
+    Like XORCrossoverAsymmetric (and unlike IntersectionCrossover/
+    XORCrossover), no additional edges are sampled from outside the two
+    parents.
 
     Spanning tree constraints: not supported.
     """
@@ -1265,110 +1514,281 @@ class SGSSimplifiedMutator(Mutator):
     def __init__(
         self,
         graph: Graph,
-        sigma: int | None,
-        traversal_method: str = 'bfs',
         edge_orderer: EdgeOrderer | None = None,
         weight_sampler: WeightSampler | None = None,
-        fixed: bool = False
     ) -> None:
         """
-        Initialise an SG object.
+        Initialise an XORCrossoverPrioritized object.
 
         Args:
-            graph (Graph): Input graph.
-            sigma (int): Maximum number of nodes for the limited BFS call. Must
-                be between 3 and |V|. In every application of the operator a number
-                in {3, ..., sigma} is sampled at random for the sub-graph size.
-            traversal_method (str): Either 'bfs' or 'dfs' for {breadth,depth} first
-                search respectively. This decides on how the sub-graph is build.
-                Default is 'bfs'.
-            edge_orderer (EdgeOrderer): strategy for ordering the edges before passing down to
+            graph (Graph): the source graph.
+            edge_orderer (EdgeOrderer): strategy for ordering the shared-edge
+                block before passing the combined priority list down to
                 KruskalRelink. Defaults to an instance of EdgeOrdererExact.
-            sampler (RandomWeightSampler): an object of class RandomWeightSampler
+            weight_sampler (WeightSampler): an object of class RandomWeightSampler
                 which is used to sample weights for the scalarisation part.
-            fixed (bool): is the number of randomly added edges an upper bound or fixed?
-                Default is False.
         """
         super().__init__()
 
-        assert isinstance(graph, Graph)
-        assert 3 <= sigma <= graph.get_n()
-        assert traversal_method in ['bfs', 'dfs']
-
         self.graph = graph
-        self.sigma = sigma
-        self.traversal_method = BFS if traversal_method == 'bfs' else DFS
         self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
         self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
 
-        # book-keeping of visited nodes
-        self.visited = [False] * (graph.get_n() + 1)
-        self.fixed = fixed
-
-    def create(self, tree: Graph, n_children: int = 1) -> Graph | list[Graph]:
+    def create(self, tree1: Graph, tree2: Graph) -> Graph:
         """
-        Produce a new spanning tree based on the SGS operator logic.
+        Produce a new spanning tree based on the XORCrossoverPrioritized logic.
 
         Args:
-            tree (Graph): parent spanning tree.
-            n_children (int): number of children. Values other than the default 1
-                are not supported by this operator.
+            tree1 (Graph): the first parent spanning tree.
+            tree2 (Graph): the second parent spanning tree.
 
         Returns:
             A spanning tree.
         """
-        n = tree.get_n()
+        assert tree1.is_spanning_tree()
+        assert tree2.is_spanning_tree()
 
-        # sample start node for limited search call
-        start_node = random.randint(1, n)
+        q = tree1.get_q()
 
-        # override if parameter is passed to this method
-        sigma = self.sigma if self.sigma is not None else int(self.graph.get_n() / 2)
+        # exclusive edges: present in exactly one of the two parents
+        s1 = [e for e in tree1.get_edges() if not tree2.has_edge(e.v, e.w)]
+        s2 = [e for e in tree2.get_edges() if not tree1.has_edge(e.v, e.w)]
 
-        # number of nodes for limited search
-        max_visited = sigma if self.fixed else random.randint(3, sigma)
+        # shared (intersection) edges: present in both parents
+        shared_edges = [e for e in tree2.get_edges() if tree1.has_edge(e.v, e.w)]
 
-        self.set_stats({'no_selected_nodes': max_visited})
+        lambdas = self.weight_sampler.sample(q)[0]
+        ordered_shared_edges = self.edge_orderer.order(shared_edges, lambdas)
 
-        # obtain selected nodes (these are used for subgraph construction)
-        selected_nodes = self.traversal_method(
-            tree, start = start_node, max_visited = max_visited
-        ).get_queued_nodes()
-
-        # temporarily set the visited flag for all selected nodes
-        for v in selected_nodes:
-            self.visited[v] = True
-        assert sum(self.visited) == len(selected_nodes)
-
-        # copy of parent tree
-        initial_tree = tree.copy(copy_edges = False)
-        # copy only edges where at most one incident node was selected
-        for e in tree:
-            if (not self.visited[e.v]) or (not self.visited[e.w]):
-                initial_tree.add_edge(e.copy(), check_exists = False)
-
-        # now prepare the "relevant" edges
-        relevant_edges = [
-            e for e in self.graph.get_edges(selected_nodes)
-            if self.visited[e.v] and self.visited[e.w]
-        ]
-
-        # sample random weight vector
-        lambdas = self.weight_sampler.sample(tree.get_q())[0]
-
-        relevant_edges = self.edge_orderer.order(relevant_edges, lambdas)
+        # priority list: S1 first, then S2, then the shared edges in
+        # lambda-order -- tree1's exclusive edges always get first
+        # refusal, no random parent preference
+        relevant_edges = s1 + s2 + ordered_shared_edges
 
         self.child = KruskalRelink(
-            self.graph, relevant_edges, initial_tree
+            self.graph,
+            relevant_edges,
         ).solve().get_solution()
-        # self.child.plot()
 
         assert self.child.is_spanning_tree()
 
-        # reset visited flag in O(|selected_nodes|)
-        for v in selected_nodes:
-            self.visited[v] = False
+        return self.child
 
-        assert sum(self.visited) == 0
+
+class UnionCrossoverInterleaved(Recombinator):
+    """
+    Interleaved Union Crossover (UNION-I) recombination operator.
+
+    Variant of UnionCrossover that deliberately interleaves exploitation
+    (edges the parents already carry) with exploration (fresh edges from
+    outside the parents) at a fixed 1:1 ratio, instead of relying on
+    scalarised cost alone to decide how much say each side gets.
+
+    The union of both parents' edges E(T1) u E(T2) is scalarised with a
+    freshly sampled weight vector lambda and cost-ordered. An equally sized
+    sample of edges from *outside* the union (i.e. from E(graph) \\
+    (E(T1) u E(T2))) is drawn and ordered by the very same lambda. The two
+    cost-ordered lists are then interleaved edge-by-edge (union, outside,
+    union, outside, ...) into a single candidate list, which is handed to
+    KruskalRelink to build the child from scratch.
+
+    This guarantees that outside edges get a real, evenly-spaced chance to
+    be picked up by the underlying greedy Kruskal relinking regardless of
+    where they fall in the cost order -- unlike simply appending them to
+    the candidate pool and re-sorting everything together, which lets cheap
+    union edges crowd out outside edges entirely.
+
+    Spanning tree constraints: not supported.
+    """
+
+    def __init__(
+        self,
+        graph: Graph,
+        edge_orderer: EdgeOrderer | None = None,
+        weight_sampler: WeightSampler | None = None,
+    ) -> None:
+        """
+        Initialise a UnionCrossoverInterleaved object.
+
+        Args:
+            graph (Graph): the source graph.
+            edge_orderer (EdgeOrderer): strategy for cost-ordering the union
+                edges and the outside-sampled edges before interleaving them.
+                Defaults to an instance of EdgeOrdererExact.
+            weight_sampler (WeightSampler): an object of class RandomWeightSampler
+                which is used to sample weights for the scalarisation part.
+        """
+        super().__init__()
+
+        self.graph = graph
+        self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
+        self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
+
+    def create(self, tree1: Graph, tree2: Graph) -> Graph:
+        """
+        Produce a new spanning tree based on the UnionCrossoverInterleaved logic.
+
+        Args:
+            tree1 (Graph): the first parent spanning tree.
+            tree2 (Graph): the second parent spanning tree.
+
+        Returns:
+            A spanning tree.
+        """
+        assert tree1.is_spanning_tree()
+        assert tree2.is_spanning_tree()
+
+        q = tree1.get_q()
+
+        # union of both parents' edges
+        union_graph = tree1.copy()
+        for e in tree2.get_edges():
+            union_graph.add_edge(e.copy(), check_exists = True)
+        union_edges = union_graph.get_edges()
+
+        # edges of the source graph that appear in neither parent
+        outside_edges = [e for e in self.graph.get_edges() if not union_graph.has_edge(e.v, e.w)]
+        outside_sampler = EdgeSamplerUniform(outside_edges)
+        sampled_outside_edges = outside_sampler.sample(len(union_edges))
+
+        # both pools are scalarised with the very same lambda, so they are
+        # directly comparable when interleaved below
+        lambdas = self.weight_sampler.sample(q)[0]
+        ordered_union_edges = self.edge_orderer.order(union_edges, lambdas)
+        ordered_outside_edges = self.edge_orderer.order(sampled_outside_edges, lambdas)
+
+        # interleave both cost-ordered lists edge-by-edge: union, outside,
+        # union, outside, ... guaranteeing outside edges a fixed, evenly
+        # spaced share of the candidate pool regardless of raw cost
+        interleaved_edges = []
+        for u, o in zip(ordered_union_edges, ordered_outside_edges):
+            interleaved_edges.append(u)
+            interleaved_edges.append(o)
+
+        self.child = KruskalRelink(
+            self.graph,
+            interleaved_edges,
+        ).solve().get_solution()
+
+        assert self.child.is_spanning_tree()
+
+        return self.child
+
+
+class IntersectionCrossoverInterleaved(Recombinator):
+    """
+    Interleaved Intersection Crossover (INTER-I) recombination operator.
+
+    Variant of IntersectionCrossover that swaps its plain cost-ordered
+    completion step for the same fixed 1:1 interleaving scheme used by
+    UnionCrossoverInterleaved. Edges shared by both parent spanning trees
+    (the intersection I = E(T1) n E(T2)) are inherited directly into the
+    child and stay fixed, exactly as in IntersectionCrossover. The
+    remaining edges needed to complete the spanning tree are then chosen by
+    alternating, edge-by-edge, between two separately cost-ordered pools of
+    equal size:
+      * R = (E(T1) u E(T2)) \\ I -- the union of both parents' edges minus
+        the intersection (the same completion pool IntersectionCrossover
+        uses), scalarised and cost-ordered with a freshly sampled weight
+        vector lambda; and
+      * an equally sized sample of edges from *outside* the union
+        (E(graph) \\ (E(T1) u E(T2))), ordered with the very same lambda.
+
+    The interleaved list (R[0], outside[0], R[1], outside[1], ...) is
+    handed to KruskalRelink, completing the child on top of the fixed
+    intersection edges. As with UnionCrossoverInterleaved, this guarantees
+    outside edges an evenly-spaced share of the candidate pool regardless
+    of raw cost, instead of letting cheap union edges crowd them out via a
+    single merged cost order.
+
+    Spanning tree constraints: not supported.
+    """
+
+    def __init__(
+        self,
+        graph: Graph,
+        edge_orderer: EdgeOrderer | None = None,
+        weight_sampler: WeightSampler | None = None,
+    ) -> None:
+        """
+        Initialise an IntersectionCrossoverInterleaved object.
+
+        Args:
+            graph (Graph): the source graph.
+            edge_orderer (EdgeOrderer): strategy for cost-ordering the
+                completion pool R and the outside-sampled edges before
+                interleaving them. Defaults to an instance of EdgeOrdererExact.
+            weight_sampler (WeightSampler): an object of class RandomWeightSampler
+                which is used to sample weights for the scalarisation part.
+        """
+        super().__init__()
+
+        self.graph = graph
+        self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
+        self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
+
+    def create(self, tree1: Graph, tree2: Graph) -> Graph:
+        """
+        Produce a new spanning tree based on the IntersectionCrossoverInterleaved logic.
+
+        Args:
+            tree1 (Graph): the first parent spanning tree.
+            tree2 (Graph): the second parent spanning tree.
+
+        Returns:
+            A spanning tree.
+        """
+        assert tree1.is_spanning_tree()
+        assert tree2.is_spanning_tree()
+
+        q = tree1.get_q()
+
+        # child starts out empty; edges present in both parents (the
+        # intersection) are inherited directly and stay fixed from here on
+        self.child = tree1.copy(copy_edges = False)
+
+        # R = (E(T1) u E(T2)) \ I: the union of both parents' edges minus
+        # the intersection edges, which are already fixed into self.child
+        # above
+        completion_pool = [e for e in tree1.get_edges() if not tree2.has_edge(e.v, e.w)]
+
+        for e in tree2.get_edges():
+            if tree1.has_edge(e.v, e.w):
+                self.child.add_edge(e.copy(), check_exists = False)
+            else:
+                completion_pool.append(e)
+
+        # full union of both parents' edges, needed below to determine
+        # which of the source graph's edges lie outside both parents
+        union_graph = tree1.copy()
+        for e in tree2.get_edges():
+            union_graph.add_edge(e.copy(), check_exists = True)
+
+        # edges of the source graph that appear in neither parent
+        outside_edges = [e for e in self.graph.get_edges() if not union_graph.has_edge(e.v, e.w)]
+        outside_sampler = EdgeSamplerUniform(outside_edges)
+        sampled_outside_edges = outside_sampler.sample(len(completion_pool))
+
+        # both pools are scalarised with the very same lambda, so they are
+        # directly comparable when interleaved below
+        lambdas = self.weight_sampler.sample(q)[0]
+        ordered_completion_pool = self.edge_orderer.order(completion_pool, lambdas)
+        ordered_outside_edges = self.edge_orderer.order(sampled_outside_edges, lambdas)
+
+        # interleave both cost-ordered lists edge-by-edge: R, outside, R,
+        # outside, ... guaranteeing outside edges a fixed, evenly spaced
+        # share of the candidate pool regardless of raw cost
+        interleaved_edges = []
+        for r, o in zip(ordered_completion_pool, ordered_outside_edges):
+            interleaved_edges.append(r)
+            interleaved_edges.append(o)
+
+        self.child = KruskalRelink(
+            self.graph,
+            interleaved_edges,
+            self.child,
+        ).solve().get_solution()
+
+        assert self.child.is_spanning_tree()
 
         return self.child

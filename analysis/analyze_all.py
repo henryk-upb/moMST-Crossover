@@ -1,21 +1,21 @@
 #!/usr/bin/env python
 '''
-Fuehrt alle vier Analyse-Skripte (analyze_hypervolume.py, analyze_pf_and_
-convergence.py, analyze_quality_by_size.py, analyze_mean_rankings.py) fuer
-denselben Lauf/dieselben Registries aus, sammelt alle vier Diagramm-Saetze
-unter einem gemeinsamen --out-Verzeichnis ein und archiviert sie anschliessend
-zusammen als EINEN Eintrag unter analysis_log/full_report/ -- statt vier
-separate Archiv-Eintraege in vier verschiedenen Unterordnern, wie es beim
-einzelnen Aufruf der vier Skripte passieren wuerde.
+Fuehrt alle Analyse-Skripte (analyze_hypervolume.py, analyze_pf_and_convergence.py,
+analyze_quality_by_size.py -- einmal je Groesse UND einmal je Instanzklasse --,
+analyze_mean_rankings.py, analyze_runtime.py) fuer denselben Lauf/dieselben
+Registries aus, sammelt alle Diagramm-Saetze unter einem gemeinsamen
+--out-Verzeichnis ein und archiviert sie anschliessend zusammen als EINEN
+Eintrag unter analysis_log/full_report/ -- statt je einem separaten Archiv-
+Eintrag pro Skript, wie es beim einzelnen Aufruf passieren wuerde.
 
-Jedes Teilskript wird als eigener Subprozess mit --no-archive aufgerufen
-(sys.executable, also dieselbe Python-Umgebung wie dieser Orchestrator) --
-so bleiben die vier Skripte unveraendert und unabhaengig weiter einzeln
-nutzbar. analyze_hypervolume.py und analyze_pf_and_convergence.py akzeptieren
-nur EINE Registry (Positional-Argument registry_path); dafuer wird die erste
-der uebergebenen Registries verwendet. analyze_quality_by_size.py und
-analyze_mean_rankings.py akzeptieren mehrere Registries und bekommen daher
-immer die volle Liste durchgereicht.
+Jedes Teilskript wird als eigener Subprozess aufgerufen (sys.executable, also
+dieselbe Python-Umgebung wie dieser Orchestrator) -- so bleiben die Skripte
+unveraendert und unabhaengig weiter einzeln nutzbar. analyze_hypervolume.py
+und analyze_pf_and_convergence.py akzeptieren nur EINE Registry (Positional-
+Argument registry_path); dafuer wird die erste der uebergebenen Registries
+verwendet. analyze_quality_by_size.py, analyze_mean_rankings.py und
+analyze_runtime.py akzeptieren mehrere Registries und bekommen daher immer
+die volle Liste durchgereicht.
 
 Nutzung:
   python analysis/analyze_all.py results/approximations/ex07 --algo-col operator \
@@ -39,7 +39,8 @@ from analyze_hypervolume import get_git_info
 from analyze_quality_by_size import parse_registry_arg
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-STEPS = ['analyze_hypervolume', 'analyze_pf_and_convergence', 'analyze_quality_by_size', 'analyze_mean_rankings']
+STEPS = ['analyze_hypervolume', 'analyze_pf_and_convergence', 'analyze_quality_by_size',
+         'analyze_quality_by_class', 'analyze_mean_rankings', 'analyze_runtime']
 
 
 def script_path(name):
@@ -47,7 +48,7 @@ def script_path(name):
 
 
 def run_step(step_num, label, cmd):
-    print(f"\n{'=' * 70}\n{step_num}/4 {label}\n{'=' * 70}")
+    print(f"\n{'=' * 70}\n{step_num}/{len(STEPS)} {label}\n{'=' * 70}")
     print(' '.join(cmd))
     result = subprocess.run(cmd)
     if result.returncode != 0:
@@ -162,25 +163,39 @@ def main():
         pf_cmd += ['--instance', args.instance]
     steps_status['analyze_pf_and_convergence'] = run_step(2, 'analyze_pf_and_convergence.py', pf_cmd)
 
-    # analyze_quality_by_size.py und analyze_mean_rankings.py haben (noch) keine eigene
-    # --no-archive/--archive-dir-Option -- sie archivieren nie selbst, daher hier weglassen
+    # analyze_quality_by_size.py, analyze_mean_rankings.py und analyze_runtime.py haben (noch)
+    # keine eigene --no-archive/--archive-dir-Option -- sie archivieren nie selbst, daher hier weglassen
     size_cmd = [sys.executable, script_path('analyze_quality_by_size.py'), *args.registries,
                 '--algo-col', args.algo_col, '--out', os.path.join(out_root, 'quality_by_size')]
     if args.pool_instances:
         size_cmd.append('--pool-instances')
-    steps_status['analyze_quality_by_size'] = run_step(3, 'analyze_quality_by_size.py', size_cmd)
+    steps_status['analyze_quality_by_size'] = run_step(3, 'analyze_quality_by_size.py (--facet-by size)', size_cmd)
+
+    # zusaetzlich nach Instanzklasse facettiert: bei Registries wie ex07, wo alle Instanzen
+    # dieselbe Groesse haben, ist das die aussagekraeftigere Ansicht (rohe HV, nie ueber
+    # Instanzen gepoolt, siehe analyze_quality_by_size.py's Docstring)
+    class_cmd = [sys.executable, script_path('analyze_quality_by_size.py'), *args.registries,
+                 '--algo-col', args.algo_col, '--facet-by', 'class',
+                 '--out', os.path.join(out_root, 'quality_by_class')]
+    if args.pool_instances:
+        class_cmd.append('--pool-instances')
+    steps_status['analyze_quality_by_class'] = run_step(4, 'analyze_quality_by_size.py (--facet-by class)', class_cmd)
 
     rankings_cmd = [sys.executable, script_path('analyze_mean_rankings.py'), *args.registries,
                      '--algo-col', args.algo_col, '--budget-pcts', args.budget_pcts,
                      '--out', os.path.join(out_root, 'mean_rankings')]
-    steps_status['analyze_mean_rankings'] = run_step(4, 'analyze_mean_rankings.py', rankings_cmd)
+    steps_status['analyze_mean_rankings'] = run_step(5, 'analyze_mean_rankings.py', rankings_cmd)
+
+    runtime_cmd = [sys.executable, script_path('analyze_runtime.py'), *args.registries,
+                    '--algo-col', args.algo_col, '--out', os.path.join(out_root, 'runtime')]
+    steps_status['analyze_runtime'] = run_step(6, 'analyze_runtime.py', runtime_cmd)
 
     print(f"\n{'=' * 70}\nZusammenfassung\n{'=' * 70}")
     for name in STEPS:
         print(f"  {name}: {'ok' if steps_status.get(name) else 'FEHLER'}")
 
     if not any(steps_status.values()):
-        raise SystemExit('\nAlle 4 Teilanalysen sind fehlgeschlagen -- nichts zum Archivieren.')
+        raise SystemExit(f'\nAlle {len(STEPS)} Teilanalysen sind fehlgeschlagen -- nichts zum Archivieren.')
 
     if not args.no_archive:
         entry_dir, diagram_paths = archive_combined(args.archive_dir, args.label, args.note, out_root, steps_status)

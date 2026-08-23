@@ -1,0 +1,115 @@
+Instanzen gepoolt: 40
+Algorithmen (crossover): ['INTER', 'UNION', 'XOR', 'XOR-A', 'XOR-P']
+
+=== Deskriptive Statistik (n = 400 (Instanz,Repl)-Bloecke ueber 40 Instanzen) ===
+           count          mean           std        median         min           max
+algorithm                                                                           
+INTER      400.0  4.493091e+06  4.471429e+06  2.058720e+06  1399662.12  1.309486e+07
+UNION      400.0  4.343058e+06  4.358860e+06  1.901126e+06  1322060.02  1.293540e+07
+XOR        400.0  4.555276e+06  4.550172e+06  2.117252e+06  1407237.27  1.322410e+07
+XOR-A      400.0  1.273242e+06  8.278551e+05  1.008139e+06   289470.42  3.283310e+06
+XOR-P      400.0  1.264307e+06  8.182243e+05  1.007775e+06   285208.07  3.198558e+06
+
+Friedman-Test (gepaart ueber (Instanz,Repl)-Bloecke ueber 40 Instanzen, 5 Gruppen): chi2 = 1465.9880, p = 0
+
+=== Paarweise Wilcoxon-Vorzeichen-Rang-Tests (Holm-korrigiert) ===
+INTER vs. UNION: p_raw = 7.219e-60, p_holm = 2.166e-59  (besser im Median: INTER)
+INTER vs. XOR: p_raw = 5.269e-40, p_holm = 1.054e-39  (besser im Median: XOR)
+INTER vs. XOR-A: p_raw = 2.73e-67, p_holm = 2.73e-66  (besser im Median: INTER)
+INTER vs. XOR-P: p_raw = 2.73e-67, p_holm = 2.73e-66  (besser im Median: INTER)
+UNION vs. XOR: p_raw = 2.921e-67, p_holm = 2.73e-66  (besser im Median: XOR)
+UNION vs. XOR-A: p_raw = 2.73e-67, p_holm = 2.73e-66  (besser im Median: UNION)
+UNION vs. XOR-P: p_raw = 2.73e-67, p_holm = 2.73e-66  (besser im Median: UNION)
+XOR vs. XOR-A: p_raw = 2.73e-67, p_holm = 2.73e-66  (besser im Median: XOR)
+XOR vs. XOR-P: p_raw = 2.73e-67, p_holm = 2.73e-66  (besser im Median: XOR)
+XOR-A vs. XOR-P: p_raw = 0.2637, p_holm = 0.2637  (besser im Median: XOR-A)
+
+Plots gespeichert in: figures/full_report/ex05_5ops/hv_analysis/ex05/_all_instances
+Rohwerte (hv, rank, relative_pct je Instanz/Repl) gespeichert in: figures/full_report/ex05_5ops/hv_analysis/ex05/_all_instances/hv_cross_instance.csv
+Instanz: instances/100/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_3.graph
+Algorithmen (crossover): ['INTER', 'UNION', 'XOR', 'XOR-A', 'XOR-P']
+Referenzpunkt fuer HV: (7772.1, 1651.65)
+
+Plot gespeichert in: figures/full_report/ex05_5ops/pf_and_convergence/ex05/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_3.graph/pf_and_convergence.png
+Konvergenz-Rohwerte gespeichert in: figures/full_report/ex05_5ops/pf_and_convergence/ex05/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_3.graph/convergence_values.csv
+Gefundene Instanzgroessen: [100]
+  size = 100: Instanz = instances/100/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_3.graph
+
+Plot gespeichert in: figures/full_report/ex05_5ops/quality_by_size/_all/quality_by_size_boxplot.png
+Rohwerte gespeichert in: figures/full_report/ex05_5ops/quality_by_size/_all/quality_by_size.csv
+Gefundene Instanzklassen: ['C1', 'C2', 'C3', 'C4']
+  class = C1: Instanz = instances/100/CLASS1_100_4950_0_2_UNG_CEG_RWG-RWG_5.graph
+  class = C2: Instanz = instances/100/CLASS2_100_4950_0_2_UNG_CEG_CONCWG_2.graph
+  class = C3: Instanz = instances/100/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_3.graph
+  class = C4: Instanz = instances/100/CLASS4_100_4950_0_2_UNG_CEG_0.95--CORWG_1.graph
+
+Plot gespeichert in: figures/full_report/ex05_5ops/quality_by_class/_all/quality_by_class_boxplot.png
+Rohwerte gespeichert in: figures/full_report/ex05_5ops/quality_by_class/_all/quality_by_class.csv
+Registries: [('results/approximations/ex05', ['crossover'])]
+Budget-Prozentsaetze: [10, 100]
+Instanzen: ['instances/100/CLASS1_100_4950_0_2_UNG_CEG_RWG-RWG_1.graph', 'instances/100/CLASS1_100_4950_0_2_UNG_CEG_RWG-RWG_10.graph', 'instances/100/CLASS1_100_4950_0_2_UNG_CEG_RWG-RWG_2.graph', 'instances/100/CLASS1_100_4950_0_2_UNG_CEG_RWG-RWG_3.graph', 'instances/100/CLASS1_100_4950_0_2_UNG_CEG_RWG-RWG_4.graph', 'instances/100/CLASS1_100_4950_0_2_UNG_CEG_RWG-RWG_5.graph', 'instances/100/CLASS1_100_4950_0_2_UNG_CEG_RWG-RWG_6.graph', 'instances/100/CLASS1_100_4950_0_2_UNG_CEG_RWG-RWG_7.graph', 'instances/100/CLASS1_100_4950_0_2_UNG_CEG_RWG-RWG_8.graph', 'instances/100/CLASS1_100_4950_0_2_UNG_CEG_RWG-RWG_9.graph', 'instances/100/CLASS2_100_4950_0_2_UNG_CEG_CONCWG_1.graph', 'instances/100/CLASS2_100_4950_0_2_UNG_CEG_CONCWG_10.graph', 'instances/100/CLASS2_100_4950_0_2_UNG_CEG_CONCWG_2.graph', 'instances/100/CLASS2_100_4950_0_2_UNG_CEG_CONCWG_3.graph', 'instances/100/CLASS2_100_4950_0_2_UNG_CEG_CONCWG_4.graph', 'instances/100/CLASS2_100_4950_0_2_UNG_CEG_CONCWG_5.graph', 'instances/100/CLASS2_100_4950_0_2_UNG_CEG_CONCWG_6.graph', 'instances/100/CLASS2_100_4950_0_2_UNG_CEG_CONCWG_7.graph', 'instances/100/CLASS2_100_4950_0_2_UNG_CEG_CONCWG_8.graph', 'instances/100/CLASS2_100_4950_0_2_UNG_CEG_CONCWG_9.graph', 'instances/100/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_1.graph', 'instances/100/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_10.graph', 'instances/100/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_2.graph', 'instances/100/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_3.graph', 'instances/100/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_4.graph', 'instances/100/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_5.graph', 'instances/100/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_6.graph', 'instances/100/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_7.graph', 'instances/100/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_8.graph', 'instances/100/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_9.graph', 'instances/100/CLASS4_100_4950_0_2_UNG_CEG_0.95--CORWG_1.graph', 'instances/100/CLASS4_100_4950_0_2_UNG_CEG_0.95--CORWG_10.graph', 'instances/100/CLASS4_100_4950_0_2_UNG_CEG_0.95--CORWG_2.graph', 'instances/100/CLASS4_100_4950_0_2_UNG_CEG_0.95--CORWG_3.graph', 'instances/100/CLASS4_100_4950_0_2_UNG_CEG_0.95--CORWG_4.graph', 'instances/100/CLASS4_100_4950_0_2_UNG_CEG_0.95--CORWG_5.graph', 'instances/100/CLASS4_100_4950_0_2_UNG_CEG_0.95--CORWG_6.graph', 'instances/100/CLASS4_100_4950_0_2_UNG_CEG_0.95--CORWG_7.graph', 'instances/100/CLASS4_100_4950_0_2_UNG_CEG_0.95--CORWG_8.graph', 'instances/100/CLASS4_100_4950_0_2_UNG_CEG_0.95--CORWG_9.graph']
+Klassen: ['C1', 'C2', 'C3', 'C4']
+Algorithmen: ['INTER', 'UNION', 'XOR', 'XOR-A', 'XOR-P']
+
+Plot gespeichert in: figures/full_report/ex05_5ops/mean_rankings/_all/mean_rankings.png
+Mittlere Raenge gespeichert in: figures/full_report/ex05_5ops/mean_rankings/_all/mean_rankings.csv
+Rohe Rang-Werte gespeichert in: figures/full_report/ex05_5ops/mean_rankings/_all/ranked_values.csv
+Instanzgroessen: [np.int64(100)]
+Instanzklassen: ['C1', 'C2', 'C3', 'C4']
+Konfigurationen: ['INTER', 'UNION', 'XOR', 'XOR-A', 'XOR-P']
+
+Plot gespeichert in: figures/full_report/ex05_5ops/runtime/_all/runtime_barplot.png
+Rohwerte gespeichert in: figures/full_report/ex05_5ops/runtime/_all/runtime.csv
+
+======================================================================
+1/6 analyze_hypervolume.py
+======================================================================
+/Users/henrykroll/Thesis/anaconda3/envs/thesis-env/bin/python /Users/henrykroll/Thesis/moMST-Crossover/analysis/analyze_hypervolume.py results/approximations/ex05 --algo-col crossover --out figures/full_report/ex05_5ops/hv_analysis --no-archive --all-instances
+
+======================================================================
+2/6 analyze_pf_and_convergence.py
+======================================================================
+/Users/henrykroll/Thesis/anaconda3/envs/thesis-env/bin/python /Users/henrykroll/Thesis/moMST-Crossover/analysis/analyze_pf_and_convergence.py results/approximations/ex05 --algo-col crossover --out figures/full_report/ex05_5ops/pf_and_convergence --no-archive
+
+======================================================================
+3/6 analyze_quality_by_size.py (--facet-by size)
+======================================================================
+/Users/henrykroll/Thesis/anaconda3/envs/thesis-env/bin/python /Users/henrykroll/Thesis/moMST-Crossover/analysis/analyze_quality_by_size.py results/approximations/ex05 --algo-col crossover --out figures/full_report/ex05_5ops/quality_by_size
+
+======================================================================
+4/6 analyze_quality_by_size.py (--facet-by class)
+======================================================================
+/Users/henrykroll/Thesis/anaconda3/envs/thesis-env/bin/python /Users/henrykroll/Thesis/moMST-Crossover/analysis/analyze_quality_by_size.py results/approximations/ex05 --algo-col crossover --facet-by class --out figures/full_report/ex05_5ops/quality_by_class
+
+======================================================================
+5/6 analyze_mean_rankings.py
+======================================================================
+/Users/henrykroll/Thesis/anaconda3/envs/thesis-env/bin/python /Users/henrykroll/Thesis/moMST-Crossover/analysis/analyze_mean_rankings.py results/approximations/ex05 --algo-col crossover --budget-pcts 10,100 --out figures/full_report/ex05_5ops/mean_rankings
+
+======================================================================
+6/6 analyze_runtime.py
+======================================================================
+/Users/henrykroll/Thesis/anaconda3/envs/thesis-env/bin/python /Users/henrykroll/Thesis/moMST-Crossover/analysis/analyze_runtime.py results/approximations/ex05 --algo-col crossover --out figures/full_report/ex05_5ops/runtime
+
+======================================================================
+Zusammenfassung
+======================================================================
+  analyze_hypervolume: ok
+  analyze_pf_and_convergence: ok
+  analyze_quality_by_size: ok
+  analyze_quality_by_class: ok
+  analyze_mean_rankings: ok
+  analyze_runtime: ok
+
+Archiviert in: analysis_log/full_report/2026-08-23_233939_367cd87-dirty_ex05_5ops
+Verlaufs-Uebersicht: analysis_log/full_report/CHANGELOG.md
+
+8 Diagramme:
+  analysis_log/full_report/2026-08-23_233939_367cd87-dirty_ex05_5ops/hv_analysis/ex05/_all_instances/hv_boxplot.png
+  analysis_log/full_report/2026-08-23_233939_367cd87-dirty_ex05_5ops/hv_analysis/ex05/_all_instances/hv_ecdf.png
+  analysis_log/full_report/2026-08-23_233939_367cd87-dirty_ex05_5ops/hv_analysis/ex05/_all_instances/hv_violinplot.png
+  analysis_log/full_report/2026-08-23_233939_367cd87-dirty_ex05_5ops/mean_rankings/_all/mean_rankings.png
+  analysis_log/full_report/2026-08-23_233939_367cd87-dirty_ex05_5ops/pf_and_convergence/ex05/CLASS3_100_4950_0_2_UNG_CEG_-0.95--CORWG_3.graph/pf_and_convergence.png
+  analysis_log/full_report/2026-08-23_233939_367cd87-dirty_ex05_5ops/quality_by_class/_all/quality_by_class_boxplot.png
+  analysis_log/full_report/2026-08-23_233939_367cd87-dirty_ex05_5ops/quality_by_size/_all/quality_by_size_boxplot.png
+  analysis_log/full_report/2026-08-23_233939_367cd87-dirty_ex05_5ops/runtime/_all/runtime_barplot.png

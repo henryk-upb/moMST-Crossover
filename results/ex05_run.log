@@ -1,0 +1,11 @@
+Deleted registry dir: 'results/approximations/ex05'
+EXPYRIMENTER REGISTRY
+Path: 'results/approximations/ex05' (writable)
+Backend: Experiments.JoblibRunnerBackend()
+
+STATE OF JOBS
+#total      : 2400
+#initialised: 2400
+#running    : 0
+#done       : 0
+#failed     : 0

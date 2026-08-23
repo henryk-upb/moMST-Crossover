@@ -16,7 +16,15 @@ from Experiments.Backend import JoblibRunnerBackend, SequentialRunnerBackend
 
 from Graph.Graph import Graph
 from EA.Operators import USGMutator, SGSSimplifiedMutator, USGMutatorWithPresorting, InsertionFirstGlobalMutator, InsertionFirstLocalMutator
-from EA.Operators import UnionCrossover, IntersectionCrossover, XORCrossover
+from EA.Operators import (
+    UnionCrossover,
+    IntersectionCrossover,
+    XORCrossover,
+    XORCrossoverAsymmetric,
+    XORCrossoverPrioritized,
+    UnionCrossoverInterleaved,
+    IntersectionCrossoverInterleaved,
+)
 from EA.utils.RandomWeightSampler import WeightSampler, RandomWeightSampler, EquidistantWeightSampler
 from EA.utils.EdgeSampler import EdgeSampler, EdgeSamplerUniform
 from EA.utils.EdgeOrderer import EdgeOrderer, EdgeOrdererExact
@@ -49,7 +57,7 @@ operators are no longer run.
 
 REGISTRY_PATH = "results/approximations/ex07"
 
-CROSSOVER_OPERATORS = ["UNION", "INTER", "XOR"]
+CROSSOVER_OPERATORS = ["UNION", "INTER", "XOR", "XOR-A", "XOR-P", "UNION-I", "INTER-I"]
 MUTATION_OPERATORS = ["USGS-F", "USGS-PRE"]
 HYBRID_MUTATORS = ["USGS-F", "USGS-PRE"]
 HYBRID_P_CROSSOVER = 0.5
@@ -72,6 +80,14 @@ def setup_crossover(graph, crossover, n):
         crossover_object = IntersectionCrossover(graph, edge_sampler, edge_orderer, weight_sampler, sigma=sigma)
     elif crossover == "XOR":
         crossover_object = XORCrossover(graph, edge_sampler, edge_orderer, weight_sampler, sigma=sigma)
+    elif crossover == "XOR-A":
+        crossover_object = XORCrossoverAsymmetric(graph, edge_orderer, weight_sampler)
+    elif crossover == "XOR-P":
+        crossover_object = XORCrossoverPrioritized(graph, edge_orderer, weight_sampler)
+    elif crossover == "UNION-I":
+        crossover_object = UnionCrossoverInterleaved(graph, edge_orderer, weight_sampler)
+    elif crossover == "INTER-I":
+        crossover_object = IntersectionCrossoverInterleaved(graph, edge_orderer, weight_sampler)
 
     return lambda x, y: crossover_object.create(x, y)
 

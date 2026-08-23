@@ -13,7 +13,15 @@ from Experiments.Registry import Registry
 from Experiments.Backend import JoblibRunnerBackend, SequentialRunnerBackend
 
 from Graph.Graph import Graph
-from EA.Operators import UnionCrossover, IntersectionCrossover, XORCrossover
+from EA.Operators import (
+    UnionCrossover,
+    IntersectionCrossover,
+    XORCrossover,
+    XORCrossoverAsymmetric,
+    XORCrossoverPrioritized,
+    UnionCrossoverInterleaved,
+    IntersectionCrossoverInterleaved,
+)
 from EA.utils.RandomWeightSampler import WeightSampler, RandomWeightSampler, EquidistantWeightSampler
 from EA.utils.EdgeSampler import EdgeSampler, EdgeSamplerUniform
 from EA.utils.EdgeOrderer import EdgeOrderer, EdgeOrdererExact
@@ -40,6 +48,14 @@ def setup_crossover(graph, crossover, n):
         crossover_object = IntersectionCrossover(graph, edge_sampler, edge_orderer, weight_sampler, sigma=sigma)
     elif crossover == "XOR":
         crossover_object = XORCrossover(graph, edge_sampler, edge_orderer, weight_sampler, sigma=sigma)
+    elif crossover == "XOR-A":
+        crossover_object = XORCrossoverAsymmetric(graph, edge_orderer, weight_sampler)
+    elif crossover == "XOR-P":
+        crossover_object = XORCrossoverPrioritized(graph, edge_orderer, weight_sampler)
+    elif crossover == "UNION-I":
+        crossover_object = UnionCrossoverInterleaved(graph, edge_orderer, weight_sampler)
+    elif crossover == "INTER-I":
+        crossover_object = IntersectionCrossoverInterleaved(graph, edge_orderer, weight_sampler)
 
     return lambda x, y: crossover_object.create(x, y)
 
@@ -111,7 +127,7 @@ if __name__ == "__main__":
     # ---- full-scale design (mirrors the old ex05_parameters.py grid) ----
     path_to_instances = "instances/100"
     instances = [os.path.join(path_to_instances, f) for f in os.listdir(path_to_instances)]
-    crossovers = ["UNION", "INTER", "XOR"]
+    crossovers = ["UNION", "INTER", "XOR", "XOR-A", "XOR-P", "UNION-I", "INTER-I"]
     repls = list(range(1, 11))  # 10 independent reps, as in ex05_parameters.py
 
     # example use of the predicate feature Jakob just added: exclude a
