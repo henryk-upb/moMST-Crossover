@@ -49,17 +49,20 @@ call across all of them at once. Three modes:
     expyrimenter.py -- one hybrid per crossover type x mutator (e.g.
     "UNION+USGS-PRE").
 
-Mutation operators are restricted to USGS-F and USGS-PRE (both for
-MUTATION_OPERATORS and as hybrid partners): ex06's cross-instance analysis
-found these two to consistently outperform SGS/IF-G/IF-L, so the older
-operators are no longer run.
+Mutation operators are restricted to USGS-PRE (both for MUTATION_OPERATORS
+and as hybrid partner): ex06's cross-instance analysis found USGS-F/USGS-PRE
+to consistently outperform SGS/IF-G/IF-L, so the older operators are no
+longer run; a follow-up comparison (2026-08-22 full report, ex07 n=50) found
+USGS-PRE to be consistently faster than USGS-F (pre-sorted edge lists avoid
+the O(log m) per-call re-sort) and at least as good on HV/Epsilon when paired
+with a crossover, so USGS-F was dropped too.
 '''
 
 REGISTRY_PATH = "results/approximations/ex07"
 
 CROSSOVER_OPERATORS = ["UNION", "INTER", "XOR", "XOR-A", "XOR-P", "UNION-I", "INTER-I"]
-MUTATION_OPERATORS = ["USGS-F", "USGS-PRE"]
-HYBRID_MUTATORS = ["USGS-F", "USGS-PRE"]
+MUTATION_OPERATORS = ["USGS-PRE"]
+HYBRID_MUTATORS = ["USGS-PRE"]
 HYBRID_P_CROSSOVER = 0.5
 HYBRID_OPERATORS = [f"{c}+{m}" for c in CROSSOVER_OPERATORS for m in HYBRID_MUTATORS]
 

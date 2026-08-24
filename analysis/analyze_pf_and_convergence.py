@@ -2,6 +2,7 @@
 
 
 import argparse
+import math
 import os
 
 import matplotlib
@@ -9,7 +10,7 @@ import matplotlib.pyplot as plt
 
 from analyze_hypervolume import (
     read_params, collect_fronts, collect_trajectories, determine_reference_point,
-    compute_hv_progress_table, get_git_info, archive_generic_run,
+    compute_hv_progress_table, get_git_info, archive_generic_run, infer_instance_class,
 )
 
 
@@ -69,6 +70,85 @@ def plot_pf_and_convergence(by_algo, by_algo_traj, ref, out_dir, instance_label,
     return out_path, df_progress
 
 
+def plot_pf_by_class(by_class, out_dir, repl_for_scatter = None, show_all_repls = False):
+    '''Facet-Grid-Variante der PF-Approximation: EIN Bild mit einem Panel je
+    Instanzklasse (2x2 bei 4 Klassen) statt separater Bilder je Klasse.
+    by_class: {class_label: (by_algo, instance_label)}.'''
+    os.makedirs(out_dir, exist_ok = True)
+    classes = sorted(by_class.keys())
+    ncols = math.ceil(math.sqrt(len(classes)))
+    nrows = math.ceil(len(classes) / ncols)
+    fig, axes = plt.subplots(nrows, ncols, squeeze = False, figsize = (6 * ncols, 5 * nrows))
+    axes_flat = axes.flatten()
+
+    for ax, cls in zip(axes_flat, classes):
+        by_algo, instance_label = by_class[cls]
+        algos = sorted(by_algo.keys())
+        n = len(algos)
+        colors = matplotlib.colormaps['tab10' if n <= 10 else 'tab20'](range(n))
+        for color, algo in zip(colors, algos):
+            repls = by_algo[algo]
+            if show_all_repls:
+                for j, (repl, points) in enumerate(repls):
+                    xs, ys = zip(*points)
+                    ax.scatter(xs, ys, s = 10, alpha = 0.5, color = color, label = algo if j == 0 else None)
+            else:
+                wanted = repl_for_scatter or repls[0][0]
+                match = next((points for repl, points in repls if repl == wanted), repls[0][1])
+                xs, ys = zip(*match)
+                ax.scatter(xs, ys, s = 18, color = color, label = algo)
+        ax.set_xlabel('$c_1$')
+        ax.set_ylabel('$c_2$')
+        ax.set_title(f'Klasse {cls}\n{instance_label}', fontsize = 9)
+        ax.legend(fontsize = 7)
+    for ax in axes_flat[len(classes):]:
+        ax.axis('off')
+
+    fig.suptitle('Pareto-Front-Approximation -- je Instanzklasse')
+    fig.tight_layout(rect = (0, 0, 1, 0.94))
+    out_path = os.path.join(out_dir, 'pf_approximation.png')
+    fig.savefig(out_path, dpi = 150, bbox_inches = 'tight')
+    plt.close(fig)
+    return out_path
+
+
+def plot_convergence_by_class(by_class_progress, out_dir):
+    '''Facet-Grid-Variante der Konvergenztrajektorie: EIN Bild mit einem
+    Panel je Instanzklasse. by_class_progress: {class_label: (df_progress, instance_label)}.'''
+    os.makedirs(out_dir, exist_ok = True)
+    classes = sorted(by_class_progress.keys())
+    ncols = math.ceil(math.sqrt(len(classes)))
+    nrows = math.ceil(len(classes) / ncols)
+    fig, axes = plt.subplots(nrows, ncols, squeeze = False, figsize = (6 * ncols, 4.3 * nrows))
+    axes_flat = axes.flatten()
+
+    for ax, cls in zip(axes_flat, classes):
+        df_progress, instance_label = by_class_progress[cls]
+        algos = sorted(df_progress['algorithm'].unique())
+        n = len(algos)
+        colors = matplotlib.colormaps['tab10' if n <= 10 else 'tab20'](range(n))
+        for color, algo in zip(colors, algos):
+            sub = df_progress[df_progress['algorithm'] == algo]
+            agg = sub.groupby('gen')['hv'].agg(['mean', lambda s: s.quantile(0.25), lambda s: s.quantile(0.75)])
+            agg.columns = ['mean', 'q25', 'q75']
+            agg = agg.sort_index()
+            ax.plot(agg.index, agg['mean'], marker = 'o', markersize = 3, color = color, label = algo)
+            ax.fill_between(agg.index, agg['q25'], agg['q75'], color = color, alpha = 0.15)
+        ax.set_xlabel('Generation')
+        ax.set_ylabel('Dominierte Hypervolume')
+        ax.set_title(f'Klasse {cls}\n{instance_label}', fontsize = 9)
+        ax.legend(fontsize = 7)
+    for ax in axes_flat[len(classes):]:
+        ax.axis('off')
+
+    fig.suptitle('Konvergenztrajektorie -- je Instanzklasse')
+    fig.tight_layout(rect = (0, 0, 1, 0.94))
+    out_path = os.path.join(out_dir, 'convergence_trajectory.png')
+    fig.savefig(out_path, dpi = 150, bbox_inches = 'tight')
+    plt.close(fig)
+    return out_path
+
+
 def main():
     parser = argparse.ArgumentParser(
         description = __doc__, formatter_class = argparse.RawDescriptionHelpFormatter)
@@ -78,6 +158,11 @@ def main():
     parser.add_argument('--instance', default = None,
                          help = 'Instanzpfad wie in design.csv; '
                                 'Default: erste in design.csv gefundene Instanz')
+    parser.add_argument('--facet-class-instances', default = None,
+                         help = 'Komma-getrennte Liste von Instanzpfaden (eine je Klasse) -- statt '
+                                'Einzel-Instanz werden zwei Bilder erzeugt (pf_approximation.png, '
+                                'convergence_trajectory.png), jeweils mit einem Panel je Instanzklasse '
+                                '(2x2 bei 4 Klassen). Ueberschreibt --instance.')
     parser.add_argument('--algo-col', default = 'crossover',
                          help = "Spaltenname(n) der Algorithmus-/Operator-Bezeichnung, komma-getrennt "
                                 "fuer kombinierte Algorithmen (default: 'crossover')")
@@ -105,6 +190,33 @@ def main():
     rows = read_params(design_path)
     experiment_label = os.path.basename(os.path.normpath(args.registry_path))
     algo_cols = args.algo_col.split(',')
+
+    if args.facet_class_instances:
+        instances = args.facet_class_instances.split(',')
+        by_class, by_class_progress = {}, {}
+        for instance in instances:
+            cls = infer_instance_class(instance)
+            by_algo = collect_fronts(rows, args.registry_path, instance, algo_cols)
+            if not by_algo:
+                print(f"WARNUNG: keine Jobs fuer Instanz '{instance}' gefunden -- uebersprungen.")
+                continue
+            by_algo_traj = collect_trajectories(rows, args.registry_path, instance, algo_cols)
+            ref = determine_reference_point(by_algo, by_algo_traj)
+            df_progress = compute_hv_progress_table(by_algo_traj, ref)
+            instance_label = os.path.basename(instance)
+            by_class[cls] = (by_algo, instance_label)
+            by_class_progress[cls] = (df_progress, instance_label)
+            print(f'Klasse {cls}: Instanz = {instance} (Referenzpunkt: {ref})')
+
+        out_dir = os.path.join(args.out, experiment_label, '_by_class')
+        pf_path = plot_pf_by_class(by_class, out_dir,
+                                    repl_for_scatter = str(args.repl) if args.repl is not None else None,
+                                    show_all_repls = args.all_repls)
+        conv_path = plot_convergence_by_class(by_class_progress, out_dir)
+        print(f'\nPlots gespeichert in: {out_dir}')
+        print(f'  {pf_path}')
+        print(f'  {conv_path}')
+        return
 
     instance = args.instance or rows[0]['instance']
     instance_label = os.path.basename(instance)

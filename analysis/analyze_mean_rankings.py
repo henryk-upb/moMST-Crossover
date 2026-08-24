@@ -85,26 +85,40 @@ def snapshot_points_at_budget(by_algo, by_algo_traj, budget_pct):
     return result
 
 
-def compute_indicator_table(registries, budget_pcts):
+ALL_INDICATORS = ('HV', 'Epsilon', 'Delta_p')
+
+
+def compute_indicator_table(registries, budget_pcts, instances_filter = None, indicators = ALL_INDICATORS):
     '''Long-format DataFrame mit Spalten instance, class, repl, config, algorithm,
     budget_pct, indicator, value -- eine Zeile je (Instanz, Repl, Konfiguration,
-    Indikator).'''
+    Indikator). instances_filter (optional): nur diese Instanzpfade beruecksichtigen
+    (z.B. eine zufaellig gewaehlte Instanz je Klasse) statt aller in design.csv
+    gefundenen. indicators (optional): nur diese Indikatoren berechnen (Teilmenge
+    von HV/Epsilon/Delta_p) -- spart bei grossen Instanzen auch Rechenzeit, da
+    GD/IGD/Epsilon dann gar nicht erst ausgewertet werden.'''
     records = []
     for registry_path, algo_cols in registries:
         rows = read_params(os.path.join(registry_path, 'design.csv'))
         instances = sorted(set(row['instance'] for row in rows))
+        if instances_filter is not None:
+            instances = [i for i in instances if i in instances_filter]
         for instance in instances:
             instance_class = infer_instance_class(instance)
             by_algo = collect_fronts(rows, registry_path, instance, algo_cols)
             if not by_algo:
                 continue
             by_algo_traj = collect_trajectories(rows, registry_path, instance, algo_cols)
-            hv_ref = determine_reference_point(by_algo, by_algo_traj)
-            eps_ref = build_reference_set(by_algo)
-            gd_indicator = GD(pf = eps_ref)
-            igd_indicator = IGD(pf = eps_ref)
-            eps_indicator = Epsilon(pf = eps_ref)
-            hv_indicator = HV(ref_point = np.array(hv_ref))
+
+            need_hv = 'HV' in indicators
+            need_eps_or_dp = 'Epsilon' in indicators or 'Delta_p' in indicators
+            if need_hv:
+                hv_ref = determine_reference_point(by_algo, by_algo_traj)
+                hv_indicator = HV(ref_point = np.array(hv_ref))
+            if need_eps_or_dp:
+                eps_ref = build_reference_set(by_algo)
+                gd_indicator = GD(pf = eps_ref)
+                igd_indicator = IGD(pf = eps_ref)
+                eps_indicator = Epsilon(pf = eps_ref)
 
             for budget_pct in budget_pcts:
                 snapshots = snapshot_points_at_budget(by_algo, by_algo_traj, budget_pct)
@@ -113,10 +127,14 @@ def compute_indicator_table(registries, budget_pcts):
                     for repl, points in repls:
                         if len(points) == 0:
                             continue
-                        hv = hv_indicator(points)
-                        eps = eps_indicator(points)
-                        delta_p = max(gd_indicator(points), igd_indicator(points))
-                        for indicator_name, value in (('HV', hv), ('Epsilon', eps), ('Delta_p', delta_p)):
+                        values = {}
+                        if need_hv:
+                            values['HV'] = hv_indicator(points)
+                        if 'Epsilon' in indicators:
+                            values['Epsilon'] = eps_indicator(points)
+                        if 'Delta_p' in indicators:
+                            values['Delta_p'] = max(gd_indicator(points), igd_indicator(points))
+                        for indicator_name, value in values.items():
                             records.append({
                                 'instance': instance, 'class': instance_class, 'repl': int(repl),
                                 'config': config, 'algorithm': algo, 'budget_pct': budget_pct,
@@ -153,7 +171,7 @@ def plot_mean_rankings(agg, out_dir):
     drei Panels; Budget-Prozentsatz per Linienstil (durchgezogen = 100%,
     gestrichelt/gepunktet = niedrigere Werte) unterschieden.'''
     os.makedirs(out_dir, exist_ok = True)
-    indicators = ['HV', 'Epsilon', 'Delta_p']
+    indicators = [i for i in ('HV', 'Epsilon', 'Delta_p') if i in agg['indicator'].unique()]
     classes = sorted(agg['class'].unique())
     algorithms = sorted(agg['algorithm'].unique())
     budget_pcts = sorted(agg['budget_pct'].unique(), reverse = True)
@@ -195,13 +213,17 @@ def plot_mean_rankings(agg, out_dir):
     return out_path
 
 
-def write_run_info(out_dir, note, registries, budget_pcts):
+def write_run_info(out_dir, note, registries, budget_pcts, indicators = None, instances_filter = None):
     commit, subject, diffstat = get_git_info()
     with open(os.path.join(out_dir, 'run_info.md'), 'w') as f:
         f.write('# Mean Rankings -- Lauf-Info\n\n')
         f.write(f"- Git-Commit: `{commit or 'unbekannt'}` ({subject})"
                 + (' -- **uncommitted changes!**\n' if diffstat else '\n'))
         f.write(f'- Budget-Prozentsaetze: {budget_pcts}\n')
+        if indicators:
+            f.write(f'- Indikatoren: {indicators}\n')
+        if instances_filter:
+            f.write(f'- Instanz-Filter: {sorted(instances_filter)}\n')
         cols_desc = ', '.join(f"`{p}` (Spalte(n): {','.join(c)})" for p, c in registries)
         f.write(f'- Registries: {cols_desc}\n')
         if note:
@@ -220,6 +242,14 @@ def main():
     parser.add_argument('--budget-pcts', default = '10,100',
                          help = 'Komma-getrennte Budget-Prozentsaetze, je einer erzeugt eine eigene '
                                 'Linie pro Algorithmus (default: 10,100, wie im 2023er-Paper)')
+    parser.add_argument('--instances', default = None,
+                         help = 'Komma-getrennte Liste von Instanzpfaden (wie in design.csv); nur '
+                                'diese werden ausgewertet statt aller in der Registry gefundenen '
+                                '(z.B. eine zufaellig gewaehlte Instanz je Klasse statt ueber alle '
+                                'zu poolen)')
+    parser.add_argument('--indicators', default = 'HV,Epsilon,Delta_p',
+                         help = "Komma-getrennte Teilmenge von 'HV,Epsilon,Delta_p' -- nur diese "
+                                'werden berechnet/geplottet (default: alle drei)')
     parser.add_argument('--out', default = 'figures/mean_rankings',
                          help = 'Ausgabeverzeichnis (default: figures/mean_rankings)')
     parser.add_argument('--label', default = '_all',
@@ -230,11 +260,16 @@ def main():
     default_algo_cols = args.algo_col.split(',')
     registries = [parse_registry_arg(r, default_algo_cols) for r in args.registries]
     budget_pcts = sorted({int(p) for p in args.budget_pcts.split(',')})
+    instances_filter = set(args.instances.split(',')) if args.instances else None
+    indicators = [i.strip() for i in args.indicators.split(',')]
 
     print(f'Registries: {registries}')
     print(f'Budget-Prozentsaetze: {budget_pcts}')
+    print(f'Indikatoren: {indicators}')
+    if instances_filter:
+        print(f'Instanz-Filter: {sorted(instances_filter)}')
 
-    df = compute_indicator_table(registries, budget_pcts)
+    df = compute_indicator_table(registries, budget_pcts, instances_filter, indicators)
     if df.empty:
         raise SystemExit('Keine Daten gefunden -- Registries pruefen.')
     print(f'Instanzen: {sorted(df["instance"].unique())}')
@@ -251,7 +286,7 @@ def main():
         .to_csv(ranked_csv, index = False)
     agg_csv = os.path.join(out_dir, 'mean_rankings.csv')
     agg.sort_values(['indicator', 'class', 'mean_rank']).to_csv(agg_csv, index = False)
-    write_run_info(out_dir, args.note, registries, budget_pcts)
+    write_run_info(out_dir, args.note, registries, budget_pcts, indicators, instances_filter)
 
     print(f'\nPlot gespeichert in: {out_path}')
     print(f'Mittlere Raenge gespeichert in: {agg_csv}')

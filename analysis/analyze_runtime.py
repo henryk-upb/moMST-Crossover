@@ -35,13 +35,17 @@ def is_subgraph_config(algo_label):
     return 'USGS' in algo_label
 
 
-def collect_runtime_table(registries):
+def collect_runtime_table(registries, instances_filter = None):
     '''Long-format DataFrame mit Spalten size, class, instance, algorithm, repl, runtime,
-    column (Baseline/Subgraph-Operatoren) -- eine Zeile je Job mit vorhandener runtime.csv.'''
+    column (Baseline/Subgraph-Operatoren) -- eine Zeile je Job mit vorhandener runtime.csv.
+    instances_filter (optional): nur diese Instanzpfade beruecksichtigen statt aller in
+    design.csv gefundenen.'''
     records = []
     for registry_path, algo_cols in registries:
         rows = read_params(os.path.join(registry_path, 'design.csv'))
         for row in rows:
+            if instances_filter is not None and row['instance'] not in instances_filter:
+                continue
             rt_path = os.path.join(registry_path, 'experiments', row['jobid'], 'runtime.csv')
             if not os.path.exists(rt_path):
                 continue
@@ -137,6 +141,9 @@ def main():
     parser.add_argument('--algo-col', default = 'operator',
                          help = "Default-Algorithmus-Spalte(n) (komma-getrennt) fuer Registries "
                                 "ohne eigene ':SPALTE'-Angabe (default: 'operator')")
+    parser.add_argument('--instances', default = None,
+                         help = 'Komma-getrennte Liste von Instanzpfaden (wie in design.csv); nur '
+                                'diese werden ausgewertet statt aller in der Registry gefundenen')
     parser.add_argument('--out', default = 'figures/runtime',
                          help = 'Ausgabeverzeichnis (default: figures/runtime)')
     parser.add_argument('--label', default = '_all',
@@ -146,8 +153,11 @@ def main():
 
     default_algo_cols = args.algo_col.split(',')
     registries = [parse_registry_arg(r, default_algo_cols) for r in args.registries]
+    instances_filter = set(args.instances.split(',')) if args.instances else None
+    if instances_filter:
+        print(f'Instanz-Filter: {sorted(instances_filter)}')
 
-    df = collect_runtime_table(registries)
+    df = collect_runtime_table(registries, instances_filter)
     if df.empty:
         raise SystemExit('Keine runtime.csv-Dateien gefunden -- Registries pruefen.')
     print(f'Instanzgroessen: {sorted(df["size"].unique())}')

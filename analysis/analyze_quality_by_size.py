@@ -201,7 +201,7 @@ def plot_quality_by_facet(df, value_col, out_dir, log_scale, title_suffix, facet
     label_fontsize = 8 if n_algos <= 8 else 7
     panel_title = (lambda v: f'n = {v}') if facet_by == 'size' else (lambda v: f'Klasse {v}')
 
-    ncols = min(len(keys), 3)
+    ncols = math.ceil(math.sqrt(len(keys)))
     nrows = math.ceil(len(keys) / ncols)
     fig, axes = plt.subplots(nrows, ncols, figsize = (4.2 * ncols, 4.5 * nrows), squeeze = False)
     axes_flat = axes.flatten()
