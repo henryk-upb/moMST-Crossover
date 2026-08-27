@@ -39,7 +39,7 @@ def plot_pf_and_convergence(by_algo, by_algo_traj, ref, out_dir, instance_label,
 
     ax_pf.set_xlabel('$c_1$')
     ax_pf.set_ylabel('$c_2$')
-    ax_pf.set_title(f'Pareto-Front-Approximation\n{instance_label}')
+    ax_pf.set_title(f'Pareto Front Approximation\n{instance_label}')
     if n > 8:
         ax_pf.legend(loc = 'center left', bbox_to_anchor = (1.02, 0.5), fontsize = 8, ncol = 1 + n // 20)
     else:
@@ -56,8 +56,8 @@ def plot_pf_and_convergence(by_algo, by_algo_traj, ref, out_dir, instance_label,
         ax_conv.fill_between(agg.index, agg['q25'], agg['q75'], color = color, alpha = 0.15)
 
     ax_conv.set_xlabel('Generation')
-    ax_conv.set_ylabel('Dominierte Hypervolume')
-    ax_conv.set_title(f'Konvergenztrajektorie\n{instance_label}')
+    ax_conv.set_ylabel('Dominated Hypervolume')
+    ax_conv.set_title(f'Convergence Trajectory\n{instance_label}')
     if n > 8:
         ax_conv.legend(loc = 'center left', bbox_to_anchor = (1.02, 0.5), fontsize = 8, ncol = 1 + n // 20)
     else:
@@ -99,12 +99,12 @@ def plot_pf_by_class(by_class, out_dir, repl_for_scatter = None, show_all_repls 
                 ax.scatter(xs, ys, s = 18, color = color, label = algo)
         ax.set_xlabel('$c_1$')
         ax.set_ylabel('$c_2$')
-        ax.set_title(f'Klasse {cls}\n{instance_label}', fontsize = 9)
+        ax.set_title(f'Class {cls}\n{instance_label}', fontsize = 9)
         ax.legend(fontsize = 7)
     for ax in axes_flat[len(classes):]:
         ax.axis('off')
 
-    fig.suptitle('Pareto-Front-Approximation -- je Instanzklasse')
+    fig.suptitle('Pareto Front Approximation -- per instance class')
     fig.tight_layout(rect = (0, 0, 1, 0.94))
     out_path = os.path.join(out_dir, 'pf_approximation.png')
     fig.savefig(out_path, dpi = 150, bbox_inches = 'tight')
@@ -135,13 +135,13 @@ def plot_convergence_by_class(by_class_progress, out_dir):
             ax.plot(agg.index, agg['mean'], marker = 'o', markersize = 3, color = color, label = algo)
             ax.fill_between(agg.index, agg['q25'], agg['q75'], color = color, alpha = 0.15)
         ax.set_xlabel('Generation')
-        ax.set_ylabel('Dominierte Hypervolume')
-        ax.set_title(f'Klasse {cls}\n{instance_label}', fontsize = 9)
+        ax.set_ylabel('Dominated Hypervolume')
+        ax.set_title(f'Class {cls}\n{instance_label}', fontsize = 9)
         ax.legend(fontsize = 7)
     for ax in axes_flat[len(classes):]:
         ax.axis('off')
 
-    fig.suptitle('Konvergenztrajektorie -- je Instanzklasse')
+    fig.suptitle('Convergence Trajectory -- per instance class')
     fig.tight_layout(rect = (0, 0, 1, 0.94))
     out_path = os.path.join(out_dir, 'convergence_trajectory.png')
     fig.savefig(out_path, dpi = 150, bbox_inches = 'tight')

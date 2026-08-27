@@ -28,18 +28,21 @@ import pandas as pd
 from analyze_hypervolume import read_params, get_algo_label, get_git_info
 from analyze_quality_by_size import infer_instance_size, infer_instance_class, parse_registry_arg
 
-COLUMNS = ['Baseline', 'Subgraph-Operatoren']
-
-
 def is_subgraph_config(algo_label):
     return 'USGS' in algo_label
 
 
 def collect_runtime_table(registries, instances_filter = None):
     '''Long-format DataFrame mit Spalten size, class, instance, algorithm, repl, runtime,
-    column (Baseline/Subgraph-Operatoren) -- eine Zeile je Job mit vorhandener runtime.csv.
-    instances_filter (optional): nur diese Instanzpfade beruecksichtigen statt aller in
-    design.csv gefundenen.'''
+    column -- eine Zeile je Job mit vorhandener runtime.csv. instances_filter (optional):
+    nur diese Instanzpfade beruecksichtigen statt aller in design.csv gefundenen.
+
+    'column' splittet Baseline (kein Subgraph-Mutator) von Subgraph Operators (enthaelt
+    USGS), aber NUR wenn tatsaechlich Hybrid-Operatoren (Name enthaelt "+") im Datensatz
+    vorkommen -- dort sinnvoll, um z.B. 15 Konfigurationen (ex07) auf zwei lesbare Panels
+    zu verteilen. Bei einem reinen Crossover-vs-Mutation-Vergleich ohne Hybride waere der
+    Split nur eine willkuerliche Aufspaltung weniger Operatoren auf zwei Diagramme, daher
+    dann ein einziges 'All Operators'-Panel.'''
     records = []
     for registry_path, algo_cols in registries:
         rows = read_params(os.path.join(registry_path, 'design.csv'))
@@ -59,27 +62,36 @@ def collect_runtime_table(registries, instances_filter = None):
                 'algorithm': algo,
                 'repl': int(row['repl']),
                 'runtime': runtime,
-                'column': 'Subgraph-Operatoren' if is_subgraph_config(algo) else 'Baseline',
             })
-    return pd.DataFrame.from_records(records)
+    df = pd.DataFrame.from_records(records)
+    if df.empty:
+        return df
+    has_hybrids = df['algorithm'].str.contains('+', regex = False).any()
+    if has_hybrids:
+        df['column'] = df['algorithm'].apply(lambda a: 'Subgraph Operators' if is_subgraph_config(a) else 'Baseline')
+    else:
+        df['column'] = 'All Operators'
+    return df
 
 
 def plot_runtime(df, out_dir, title_suffix):
-    '''Facet-Grid: Zeilen = Instanzgroesse n, Spalten = Baseline/Subgraph-Operatoren,
-    je Panel ein gruppierter Balkenplot (Operator x Instanzklasse, Fehlerbalken = Std) --
-    direktes Analogon zu Fig. 13 (Bossek & Grimme).'''
+    '''Facet-Grid: Zeilen = Instanzgroesse n, Spalten = 'column' (Baseline/Subgraph
+    Operators bei Hybriden im Datensatz, sonst ein einziges 'All Operators'-Panel,
+    siehe collect_runtime_table), je Panel ein gruppierter Balkenplot (Operator x
+    Instanzklasse, Fehlerbalken = Std) -- direktes Analogon zu Fig. 13 (Bossek & Grimme).'''
     os.makedirs(out_dir, exist_ok = True)
     sizes = sorted(df['size'].unique())
     classes = sorted(df['class'].unique())
+    columns = sorted(df['column'].unique())
     colors = dict(zip(classes, matplotlib.colormaps['tab10'](range(len(classes)))))
 
     agg = df.groupby(['size', 'column', 'algorithm', 'class'])['runtime'].agg(['mean', 'std', 'count']).reset_index()
 
-    fig, axes = plt.subplots(len(sizes), len(COLUMNS), squeeze = False,
-                              figsize = (6.5 * len(COLUMNS), 4.2 * len(sizes)))
+    fig, axes = plt.subplots(len(sizes), len(columns), squeeze = False,
+                              figsize = (6.5 * len(columns), 4.2 * len(sizes)))
 
     for row_idx, size in enumerate(sizes):
-        for col_idx, column in enumerate(COLUMNS):
+        for col_idx, column in enumerate(columns):
             ax = axes[row_idx][col_idx]
             sub = agg[(agg['size'] == size) & (agg['column'] == column)]
             algos = sorted(sub['algorithm'].unique())
@@ -106,13 +118,18 @@ def plot_runtime(df, out_dir, title_suffix):
             ax.set_xticklabels(algos, rotation = 45 if n_algos > 4 else 0, ha = 'right' if n_algos > 4 else 'center',
                                 fontsize = 8 if n_algos <= 10 else 7)
             ax.set_ylim(bottom = 0)
-            ax.set_title(f'n = {size} -- {column}')
+            ax.set_title(f'n = {size}' if len(columns) == 1 else f'n = {size} -- {column}')
             if col_idx == 0:
-                ax.set_ylabel('Laufzeit [s]')
+                ax.set_ylabel('Runtime [s]')
 
-    fig.legend(title = 'Instanzklasse', loc = 'center left', bbox_to_anchor = (1.0, 0.5), fontsize = 8)
-    fig.suptitle(f'Durchschnittliche Laufzeit je Operator-Konfiguration{title_suffix}')
-    fig.tight_layout(rect = (0, 0, 0.94, 0.96))
+    fig.legend(title = 'Instance Class', loc = 'center left', bbox_to_anchor = (1.0, 0.5), fontsize = 8)
+    n_instances = df['instance'].nunique()
+    if n_instances == 1:
+        instance_info = os.path.basename(df['instance'].iloc[0])
+    else:
+        instance_info = f'pooled over {n_instances} instances'
+    fig.suptitle(f'Average Runtime per Operator Configuration{title_suffix}\n{instance_info}')
+    fig.tight_layout(rect = (0, 0, 0.94, 0.94))
 
     out_path = os.path.join(out_dir, 'runtime_barplot.png')
     fig.savefig(out_path, dpi = 150, bbox_inches = 'tight')

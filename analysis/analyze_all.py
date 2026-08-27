@@ -213,6 +213,10 @@ def main():
     parser.add_argument('--budget-pcts', default = '10,100',
                          help = 'Komma-getrennte Budget-Prozentsaetze fuer analyze_mean_rankings.py '
                                 '(default: 10,100)')
+    parser.add_argument('--indicators', default = 'HV,Epsilon,Delta_p',
+                         help = "Komma-getrennte Teilmenge von 'HV,Epsilon,Delta_p' fuer "
+                                'analyze_mean_rankings.py (default: alle drei; im --per-class-Modus '
+                                'ohnehin immer nur HV)')
     parser.add_argument('--progress-budget-pcts', default = '10,20,30,40,50,60,70,80,90,100',
                          help = 'Komma-getrennte Budget-Prozentsaetze (T) fuer '
                                 'analyze_indicator_progress.py -- feineres Zeitraster als '
@@ -283,6 +287,7 @@ def main():
 
         rankings_cmd = [sys.executable, script_path('analyze_mean_rankings.py'), *args.registries,
                          '--algo-col', args.algo_col, '--budget-pcts', args.budget_pcts,
+                         '--indicators', args.indicators,
                          '--out', os.path.join(out_root, 'mean_rankings')]
         steps_status['analyze_mean_rankings'] = run_step(5, 'analyze_mean_rankings.py', rankings_cmd)
 

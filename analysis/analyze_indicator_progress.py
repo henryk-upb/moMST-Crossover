@@ -109,11 +109,11 @@ def plot_indicator_progress(agg, out_dir, mode, stat):
             ax.fill_between(line['budget_pct'], line['q25'], line['q75'], color = plotted.get_color(), alpha = 0.15)
         ax.set_xlabel('% of Maximum Generations/Evaluations')
         if mode == 'rank':
-            ax.set_ylabel(f'{stat.capitalize()} Rank (niedriger = besser)')
+            ax.set_ylabel(f'{stat.capitalize()} Rank (lower = better)')
             ax.invert_yaxis()
         else:
-            better = 'hoeher' if HIGHER_IS_BETTER.get(indicator, True) else 'niedriger'
-            ax.set_ylabel(f'{stat.capitalize()} {indicator} ({better} = besser)')
+            better = 'higher' if HIGHER_IS_BETTER.get(indicator, True) else 'lower'
+            ax.set_ylabel(f'{stat.capitalize()} {indicator} ({better} = better)')
         ax.set_title(indicator)
 
     handles, labels = axes[-1].get_legend_handles_labels()
@@ -123,8 +123,8 @@ def plot_indicator_progress(agg, out_dir, mode, stat):
     else:
         axes[-1].legend()
         fig.tight_layout(rect = (0, 0, 1, 0.94))
-    title_mode = 'Rang (gepoolt ueber alle Instanzen)' if mode == 'rank' else 'Rohwert'
-    fig.suptitle(f'Indikator-Verlauf ueber das Budget -- {title_mode}, {stat}')
+    title_mode = 'Rank (pooled over all instances)' if mode == 'rank' else 'Raw Value'
+    fig.suptitle(f'Indicator Progress over Budget -- {title_mode}, {stat}')
 
     out_path = os.path.join(out_dir, 'indicator_progress.png')
     fig.savefig(out_path, dpi = 150, bbox_inches = 'tight')
@@ -168,14 +168,14 @@ def plot_indicator_progress_by_class(agg, out_dir, stat, indicator):
             plotted, = ax.plot(line['budget_pct'], line[stat], marker = 'o', color = colors[algo], label = algo)
             ax.fill_between(line['budget_pct'], line['q25'], line['q75'], color = plotted.get_color(), alpha = 0.15)
         ax.set_xlabel('% of Max. Gen./Eval.')
-        better = 'hoeher' if HIGHER_IS_BETTER.get(indicator, True) else 'niedriger'
-        ax.set_ylabel(f'{stat.capitalize()} {indicator} ({better} = besser)')
-        ax.set_title(f'Klasse {cls}', fontsize = 9)
+        better = 'higher' if HIGHER_IS_BETTER.get(indicator, True) else 'lower'
+        ax.set_ylabel(f'{stat.capitalize()} {indicator} ({better} = better)')
+        ax.set_title(f'Class {cls}', fontsize = 9)
         ax.legend(fontsize = 7)
     for ax in axes_flat[len(classes):]:
         ax.axis('off')
 
-    fig.suptitle(f'{indicator}-Verlauf ueber das Budget -- je Instanzklasse ({stat})')
+    fig.suptitle(f'{indicator} Progress over Budget -- per Instance Class ({stat})')
     fig.tight_layout(rect = (0, 0, 1, 0.94))
     out_path = os.path.join(out_dir, 'indicator_progress.png')
     fig.savefig(out_path, dpi = 150, bbox_inches = 'tight')

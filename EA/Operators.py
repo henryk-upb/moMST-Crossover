@@ -9,7 +9,7 @@ from Graph.algorithms.CC import CC
 from Graph.utils.UnionFind import UnionFind
 from Graph.generators.RandomSpanningTreeGenerator import RandomSpanningTreeGenerator
 from EA.utils.RandomWeightSampler import WeightSampler, RandomWeightSampler, EquidistantWeightSampler
-from EA.utils.EdgeSampler import EdgeSampler, EdgeSamplerUniform
+from EA.utils.EdgeSampler import EdgeSampler, EdgeSamplerUniform, EdgeSamplerDominationCountPrecomputed
 from EA.utils.EdgeOrderer import EdgeOrderer, EdgeOrdererExact
 
 from collections import deque
@@ -1587,7 +1587,10 @@ class UnionCrossoverInterleaved(Recombinator):
     The union of both parents' edges E(T1) u E(T2) is scalarised with a
     freshly sampled weight vector lambda and cost-ordered. An equally sized
     sample of edges from *outside* the union (i.e. from E(graph) \\
-    (E(T1) u E(T2))) is drawn and ordered by the very same lambda. The two
+    (E(T1) u E(T2))) is drawn -- biased towards non-dominated (cheap) edges
+    via EdgeSamplerDominationCountPrecomputed rather than uniformly at
+    random, so exploration edges tend to be *good* candidates rather than
+    arbitrary ones -- and ordered by the very same lambda. The two
     cost-ordered lists are then interleaved edge-by-edge (union, outside,
     union, outside, ...) into a single candidate list, which is handed to
     KruskalRelink to build the child from scratch.
@@ -1623,6 +1626,11 @@ class UnionCrossoverInterleaved(Recombinator):
         self.graph = graph
         self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
         self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
+        # domination-count weights over the WHOLE graph are computed once here
+        # (O(m^2) non-dominated sorting) rather than per create() call, since
+        # the outside-edge candidate pool changes every call but is always a
+        # subset of this same, static reference population
+        self.outside_sampler = EdgeSamplerDominationCountPrecomputed(graph.get_edges())
 
     def create(self, tree1: Graph, tree2: Graph) -> Graph:
         """
@@ -1646,10 +1654,11 @@ class UnionCrossoverInterleaved(Recombinator):
             union_graph.add_edge(e.copy(), check_exists = True)
         union_edges = union_graph.get_edges()
 
-        # edges of the source graph that appear in neither parent
+        # edges of the source graph that appear in neither parent, sampled
+        # with a bias towards non-dominated (cheap) edges rather than
+        # uniformly at random
         outside_edges = [e for e in self.graph.get_edges() if not union_graph.has_edge(e.v, e.w)]
-        outside_sampler = EdgeSamplerUniform(outside_edges)
-        sampled_outside_edges = outside_sampler.sample(len(union_edges))
+        sampled_outside_edges = self.outside_sampler.sample_subset(outside_edges, len(union_edges))
 
         # both pools are scalarised with the very same lambda, so they are
         # directly comparable when interleaved below
@@ -1692,7 +1701,9 @@ class IntersectionCrossoverInterleaved(Recombinator):
         uses), scalarised and cost-ordered with a freshly sampled weight
         vector lambda; and
       * an equally sized sample of edges from *outside* the union
-        (E(graph) \\ (E(T1) u E(T2))), ordered with the very same lambda.
+        (E(graph) \\ (E(T1) u E(T2))) -- biased towards non-dominated (cheap)
+        edges via EdgeSamplerDominationCountPrecomputed rather than uniformly
+        at random -- ordered with the very same lambda.
 
     The interleaved list (R[0], outside[0], R[1], outside[1], ...) is
     handed to KruskalRelink, completing the child on top of the fixed
@@ -1726,6 +1737,10 @@ class IntersectionCrossoverInterleaved(Recombinator):
         self.graph = graph
         self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
         self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
+        # see UnionCrossoverInterleaved: precomputed once over the whole graph
+        # so create() can bias the outside-edge pool in O(k) instead of
+        # re-sorting the (near-)complete edge set on every call
+        self.outside_sampler = EdgeSamplerDominationCountPrecomputed(graph.get_edges())
 
     def create(self, tree1: Graph, tree2: Graph) -> Graph:
         """
@@ -1764,10 +1779,11 @@ class IntersectionCrossoverInterleaved(Recombinator):
         for e in tree2.get_edges():
             union_graph.add_edge(e.copy(), check_exists = True)
 
-        # edges of the source graph that appear in neither parent
+        # edges of the source graph that appear in neither parent, sampled
+        # with a bias towards non-dominated (cheap) edges rather than
+        # uniformly at random
         outside_edges = [e for e in self.graph.get_edges() if not union_graph.has_edge(e.v, e.w)]
-        outside_sampler = EdgeSamplerUniform(outside_edges)
-        sampled_outside_edges = outside_sampler.sample(len(completion_pool))
+        sampled_outside_edges = self.outside_sampler.sample_subset(outside_edges, len(completion_pool))
 
         # both pools are scalarised with the very same lambda, so they are
         # directly comparable when interleaved below
@@ -1787,6 +1803,222 @@ class IntersectionCrossoverInterleaved(Recombinator):
             self.graph,
             interleaved_edges,
             self.child,
+        ).solve().get_solution()
+
+        assert self.child.is_spanning_tree()
+
+        return self.child
+
+
+class XORCrossoverPrioritizedInterleaved(Recombinator):
+    """
+    Interleaved Prioritized XOR Crossover (XOR-P-I) recombination operator.
+
+    Fixes the root cause diagnosed in XORCrossoverPrioritized: since |S1| =
+    |S2| always (both parents are spanning trees with the same edge count),
+    the fixed priority list S1 ++ S2 ++ sort(I, lambda) lets tree1's ~n-1
+    exclusive edges fill almost the entire child on their own, in raw
+    insertion order -- the lambda-scalarised shared-edge block at the end is
+    reached in practically 0% of cases (verified empirically), so the
+    scalarisation weight vector has essentially no say over the result.
+
+    This variant applies the same fix used by UnionCrossoverInterleaved/
+    IntersectionCrossoverInterleaved: rather than concatenating S1 and S2 in
+    raw order, BOTH are cost-ordered by a freshly sampled lambda first, then
+    interleaved edge-by-edge (S1[0], S2[0], S1[1], S2[1], ...). This
+    guarantees S2 -- and the scalarisation weight vector itself -- a real,
+    evenly-spaced say over the result, instead of being crowded out by S1's
+    raw ordering. The lambda-ordered shared (intersection) edges I are kept
+    as a final fallback block, exactly as in XORCrossoverPrioritized, so the
+    result is still guaranteed to be a valid spanning tree even in the rare
+    case where S1 u S2 alone cannot connect all nodes.
+
+    Like XORCrossoverPrioritized (and unlike Union/IntersectionCrossover-
+    Interleaved), no additional edges are sampled from outside the two
+    parents: the candidate pool stays strictly within E(T1) u E(T2).
+
+    Spanning tree constraints: not supported.
+    """
+
+    def __init__(
+        self,
+        graph: Graph,
+        edge_orderer: EdgeOrderer | None = None,
+        weight_sampler: WeightSampler | None = None,
+    ) -> None:
+        """
+        Initialise a XORCrossoverPrioritizedInterleaved object.
+
+        Args:
+            graph (Graph): the source graph.
+            edge_orderer (EdgeOrderer): strategy for cost-ordering S1, S2 and
+                the shared-edge block before interleaving/appending them.
+                Defaults to an instance of EdgeOrdererExact.
+            weight_sampler (WeightSampler): an object of class RandomWeightSampler
+                which is used to sample weights for the scalarisation part.
+        """
+        super().__init__()
+
+        self.graph = graph
+        self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
+        self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
+
+    def create(self, tree1: Graph, tree2: Graph) -> Graph:
+        """
+        Produce a new spanning tree based on the XORCrossoverPrioritizedInterleaved logic.
+
+        Args:
+            tree1 (Graph): the first parent spanning tree.
+            tree2 (Graph): the second parent spanning tree.
+
+        Returns:
+            A spanning tree.
+        """
+        assert tree1.is_spanning_tree()
+        assert tree2.is_spanning_tree()
+
+        q = tree1.get_q()
+
+        # exclusive edges: present in exactly one of the two parents. |s1| ==
+        # |s2| always holds, since both parents have the same edge count
+        s1 = [e for e in tree1.get_edges() if not tree2.has_edge(e.v, e.w)]
+        s2 = [e for e in tree2.get_edges() if not tree1.has_edge(e.v, e.w)]
+
+        # shared (intersection) edges: present in both parents
+        shared_edges = [e for e in tree2.get_edges() if tree1.has_edge(e.v, e.w)]
+
+        # all three pools scalarised with the very same lambda, so they are
+        # directly comparable when interleaved/appended below
+        lambdas = self.weight_sampler.sample(q)[0]
+        ordered_s1 = self.edge_orderer.order(s1, lambdas)
+        ordered_s2 = self.edge_orderer.order(s2, lambdas)
+        ordered_shared_edges = self.edge_orderer.order(shared_edges, lambdas)
+
+        # interleave S1/S2 cost-order edge-by-edge (S1[0], S2[0], S1[1],
+        # S2[1], ...) instead of concatenating S1 ++ S2 in raw order, so
+        # lambda actually decides how much of each side ends up in the
+        # child; the shared block is appended as a fallback to guarantee a
+        # complete spanning tree even if S1 u S2 alone cannot connect
+        interleaved_edges = []
+        for e1, e2 in zip(ordered_s1, ordered_s2):
+            interleaved_edges.append(e1)
+            interleaved_edges.append(e2)
+        relevant_edges = interleaved_edges + ordered_shared_edges
+
+        self.child = KruskalRelink(
+            self.graph,
+            relevant_edges,
+        ).solve().get_solution()
+
+        assert self.child.is_spanning_tree()
+
+        return self.child
+
+
+class XORCrossoverAsymmetricInterleaved(Recombinator):
+    """
+    Interleaved Asymmetric XOR Crossover (XOR-A-I) recombination operator.
+
+    Fixes the same root cause diagnosed in XORCrossoverAsymmetric: the
+    dominant parent's exclusive edges S_dominant are inherited unconditionally
+    and in raw order, so they fill almost the entire child (since
+    |S_dominant| ~= n-1) before the losing parent's edges or the lambda-
+    scalarised completion step ever get a real say.
+
+    This variant keeps the "dominant parent" asymmetry (chosen uniformly at
+    random each call, exactly as in XORCrossoverAsymmetric) but applies the
+    interleaving fix used by UnionCrossoverInterleaved/IntersectionCrossover-
+    Interleaved: S_dominant and S_other are BOTH cost-ordered by a freshly
+    sampled lambda, then interleaved edge-by-edge, dominant-first
+    (S_dominant[0], S_other[0], S_dominant[1], S_other[1], ...) -- so the
+    "dominant" side still gets first refusal on ties, but no longer bypasses
+    lambda entirely by virtue of raw insertion order. The lambda-ordered
+    shared (intersection) edges are appended as a final fallback block (as
+    in XORCrossoverPrioritizedInterleaved) to guarantee a complete spanning
+    tree even if S_dominant u S_other alone cannot connect all nodes.
+
+    Like XORCrossoverAsymmetric (and unlike Union/IntersectionCrossover-
+    Interleaved), no additional edges are sampled from outside the two
+    parents: the candidate pool stays strictly within E(T1) u E(T2).
+
+    Spanning tree constraints: not supported.
+    """
+
+    def __init__(
+        self,
+        graph: Graph,
+        edge_orderer: EdgeOrderer | None = None,
+        weight_sampler: WeightSampler | None = None,
+    ) -> None:
+        """
+        Initialise a XORCrossoverAsymmetricInterleaved object.
+
+        Args:
+            graph (Graph): the source graph.
+            edge_orderer (EdgeOrderer): strategy for cost-ordering
+                S_dominant, S_other and the shared-edge block before
+                interleaving/appending them. Defaults to an instance of
+                EdgeOrdererExact.
+            weight_sampler (WeightSampler): an object of class RandomWeightSampler
+                which is used to sample weights for the scalarisation part.
+        """
+        super().__init__()
+
+        self.graph = graph
+        self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
+        self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
+
+    def create(self, tree1: Graph, tree2: Graph) -> Graph:
+        """
+        Produce a new spanning tree based on the XORCrossoverAsymmetricInterleaved logic.
+
+        Args:
+            tree1 (Graph): the first parent spanning tree.
+            tree2 (Graph): the second parent spanning tree.
+
+        Returns:
+            A spanning tree.
+        """
+        assert tree1.is_spanning_tree()
+        assert tree2.is_spanning_tree()
+
+        q = tree1.get_q()
+
+        # exclusive edges: present in exactly one of the two parents. |s1| ==
+        # |s2| always holds, since both parents have the same edge count
+        s1 = [e for e in tree1.get_edges() if not tree2.has_edge(e.v, e.w)]
+        s2 = [e for e in tree2.get_edges() if not tree1.has_edge(e.v, e.w)]
+
+        # shared (intersection) edges: present in both parents
+        shared_edges = [e for e in tree2.get_edges() if tree1.has_edge(e.v, e.w)]
+
+        # pick a "dominant" parent uniformly at random, as in
+        # XORCrossoverAsymmetric -- but its exclusive edges no longer get
+        # unconditional/raw-order preference, only first refusal on ties
+        # once both sides are cost-ordered and interleaved below
+        dominant_edges, other_edges = (s1, s2) if random.random() < 0.5 else (s2, s1)
+
+        # all three pools scalarised with the very same lambda, so they are
+        # directly comparable when interleaved/appended below
+        lambdas = self.weight_sampler.sample(q)[0]
+        ordered_dominant = self.edge_orderer.order(dominant_edges, lambdas)
+        ordered_other = self.edge_orderer.order(other_edges, lambdas)
+        ordered_shared_edges = self.edge_orderer.order(shared_edges, lambdas)
+
+        # interleave dominant/other cost-order edge-by-edge, dominant-first,
+        # instead of inheriting the dominant side unconditionally in raw
+        # order; the shared block is appended as a fallback to guarantee a
+        # complete spanning tree even if S_dominant u S_other alone cannot
+        # connect all nodes
+        interleaved_edges = []
+        for d, o in zip(ordered_dominant, ordered_other):
+            interleaved_edges.append(d)
+            interleaved_edges.append(o)
+        relevant_edges = interleaved_edges + ordered_shared_edges
+
+        self.child = KruskalRelink(
+            self.graph,
+            relevant_edges,
         ).solve().get_solution()
 
         assert self.child.is_spanning_tree()

@@ -97,7 +97,7 @@ def parse_registry_arg(arg, default_algo_cols):
 
 
 INFER_FACET = {'size': infer_instance_size, 'class': infer_instance_class}
-FACET_LABELS = {'size': 'Instanzgroessen', 'class': 'Instanzklassen'}
+FACET_LABELS = {'size': 'Instance Sizes', 'class': 'Instance Classes'}
 
 
 def collect_rows_by_facet(registries, facet_by):
@@ -199,7 +199,7 @@ def plot_quality_by_facet(df, value_col, out_dir, log_scale, title_suffix, facet
     n_algos = len(algos)
     rotate = n_algos > 4
     label_fontsize = 8 if n_algos <= 8 else 7
-    panel_title = (lambda v: f'n = {v}') if facet_by == 'size' else (lambda v: f'Klasse {v}')
+    panel_title = (lambda v: f'n = {v}') if facet_by == 'size' else (lambda v: f'Class {v}')
 
     ncols = math.ceil(math.sqrt(len(keys)))
     nrows = math.ceil(len(keys) / ncols)
@@ -219,10 +219,10 @@ def plot_quality_by_facet(df, value_col, out_dir, log_scale, title_suffix, facet
         ax.axis('off')
 
     if value_col == 'hv':
-        ylabel = 'Dominierte Hypervolume' + (' (log-skaliert)' if log_scale else '')
+        ylabel = 'Dominated Hypervolume' + (' (log scale)' if log_scale else '')
     else:
-        ylabel = 'Relative Hypervolume [%] (100 = beste im Block)'
-    fig.suptitle(f'Qualitaet ueber {FACET_LABELS[facet_by]}{title_suffix}')
+        ylabel = 'Relative Hypervolume [%] (100 = best in block)'
+    fig.suptitle(f'Quality across {FACET_LABELS[facet_by]}{title_suffix}')
     fig.text(0.02, 0.5, ylabel, va = 'center', rotation = 'vertical')
     fig.tight_layout(rect = (0.03, 0, 1, 0.96))
 
@@ -283,7 +283,7 @@ def main():
         df = compute_hv_by_facet_pooled(by_facet, args.facet_by)
         value_col = 'relative_pct'
         mode_desc = f'gepoolt ueber alle Instanzen je Facet-Wert ({args.facet_by}, relative_pct)'
-        title_suffix = ' (gepoolt, relative HV)'
+        title_suffix = ' (pooled, relative HV)'
     else:
         df = compute_hv_by_facet_representative(by_facet, args.instance, args.facet_by)
         value_col = 'hv'

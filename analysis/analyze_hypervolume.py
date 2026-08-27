@@ -332,9 +332,12 @@ def plot_progress(df_progress, out_dir, instance_label):
 
 def plot_distributions_by_class(by_class, out_dir):
     '''Facet-Grid-Variante von plot_distributions: EIN Bild je Diagrammtyp
-    (Boxplot/Violin/ECDF) mit einem Panel je Instanzklasse, statt vier separate
-    Bilder je Klasse -- rohe HV bleibt dabei nie ueber Instanzen gemischt, jedes
-    Panel zeigt weiterhin genau eine Instanz. by_class: {class_label: (df, instance_label)}.'''
+    (Violin/ECDF) mit einem Panel je Instanzklasse, statt vier separate Bilder
+    je Klasse -- rohe HV bleibt dabei nie ueber Instanzen gemischt, jedes Panel
+    zeigt weiterhin genau eine Instanz. by_class: {class_label: (df, instance_label)}.
+    Kein Boxplot hier: quality_by_class_boxplot.png (analyze_quality_by_size.py
+    --facet-by class) zeigt exakt dieselben rohen HV-Werte bereits als Boxplot,
+    ein zweiter waere reine Duplikation.'''
     os.makedirs(out_dir, exist_ok = True)
     classes = sorted(by_class.keys())
     ncols = math.ceil(math.sqrt(len(classes)))
@@ -353,35 +356,16 @@ def plot_distributions_by_class(by_class, out_dir):
         algos = sorted(df['algorithm'].unique())
         data = [df.loc[df['algorithm'] == a, 'hv'].values for a in algos]
         n = len(algos)
-        ax.boxplot(data, tick_labels = algos, showmeans = True)
-        ax.set_title(f'Klasse {cls}\n{instance_label}', fontsize = 9)
-        ax.set_ylabel('Hypervolume')
-        plt.setp(ax.get_xticklabels(), rotation = 45 if n > 5 else 0,
-                 ha = 'right' if n > 5 else 'center', fontsize = 8)
-    for ax in axes_flat[len(classes):]:
-        ax.axis('off')
-    fig.suptitle('HV Distribution (Boxplot) -- je Instanzklasse')
-    fig.tight_layout(rect = (0, 0, 1, 0.94))
-    paths['boxplot'] = os.path.join(out_dir, 'hv_boxplot.png')
-    fig.savefig(paths['boxplot'], dpi = 150, bbox_inches = 'tight')
-    plt.close(fig)
-
-    fig, axes_flat = new_grid((5, 4.3))
-    for ax, cls in zip(axes_flat, classes):
-        df, instance_label = by_class[cls]
-        algos = sorted(df['algorithm'].unique())
-        data = [df.loc[df['algorithm'] == a, 'hv'].values for a in algos]
-        n = len(algos)
         ax.violinplot(data, showmeans = True, showmedians = True)
         ax.set_xticks(range(1, n + 1))
         ax.set_xticklabels(algos)
-        ax.set_title(f'Klasse {cls}\n{instance_label}', fontsize = 9)
+        ax.set_title(f'Class {cls}\n{instance_label}', fontsize = 9)
         ax.set_ylabel('Hypervolume')
         plt.setp(ax.get_xticklabels(), rotation = 45 if n > 5 else 0,
                  ha = 'right' if n > 5 else 'center', fontsize = 8)
     for ax in axes_flat[len(classes):]:
         ax.axis('off')
-    fig.suptitle('HV Distribution (Violin Plot) -- je Instanzklasse')
+    fig.suptitle('HV Distribution (Violin Plot) -- per instance class')
     fig.tight_layout(rect = (0, 0, 1, 0.94))
     paths['violinplot'] = os.path.join(out_dir, 'hv_violinplot.png')
     fig.savefig(paths['violinplot'], dpi = 150, bbox_inches = 'tight')
@@ -397,53 +381,17 @@ def plot_distributions_by_class(by_class, out_dir):
             ax.step(vals, y, where = 'post', label = algo)
         ax.set_xlabel('Hypervolume')
         ax.set_ylabel('F(x)')
-        ax.set_title(f'Klasse {cls}\n{instance_label}', fontsize = 9)
+        ax.set_title(f'Class {cls}\n{instance_label}', fontsize = 9)
         ax.legend(fontsize = 7)
     for ax in axes_flat[len(classes):]:
         ax.axis('off')
-    fig.suptitle('Empirical Distribution Function (ECDF) -- je Instanzklasse')
+    fig.suptitle('Empirical Distribution Function (ECDF) -- per instance class')
     fig.tight_layout(rect = (0, 0, 1, 0.94))
     paths['ecdf'] = os.path.join(out_dir, 'hv_ecdf.png')
     fig.savefig(paths['ecdf'], dpi = 150, bbox_inches = 'tight')
     plt.close(fig)
 
     return paths
-
-
-def plot_progress_by_class(by_class_progress, out_dir):
-    '''Facet-Grid-Variante von plot_progress: EIN Bild mit einem Panel je
-    Instanzklasse statt vier separaten Bildern. by_class_progress:
-    {class_label: (df_progress, instance_label)}.'''
-    os.makedirs(out_dir, exist_ok = True)
-    classes = sorted(by_class_progress.keys())
-    ncols = math.ceil(math.sqrt(len(classes)))
-    nrows = math.ceil(len(classes) / ncols)
-    fig, axes = plt.subplots(nrows, ncols, squeeze = False, figsize = (6 * ncols, 4.3 * nrows))
-    axes_flat = axes.flatten()
-
-    for ax, cls in zip(axes_flat, classes):
-        df_progress, instance_label = by_class_progress[cls]
-        algos = sorted(df_progress['algorithm'].unique())
-        for algo in algos:
-            sub = df_progress[df_progress['algorithm'] == algo]
-            agg = sub.groupby('pct')['hv'].agg(['mean', lambda s: s.quantile(0.25), lambda s: s.quantile(0.75)])
-            agg.columns = ['mean', 'q25', 'q75']
-            agg = agg.sort_index()
-            line, = ax.plot(agg.index, agg['mean'], marker = 'o', label = algo)
-            ax.fill_between(agg.index, agg['q25'], agg['q75'], color = line.get_color(), alpha = 0.15)
-        ax.set_xlabel('% of Maximum Generations')
-        ax.set_ylabel('Hypervolume (Mean)')
-        ax.set_title(f'Klasse {cls}\n{instance_label}', fontsize = 9)
-        ax.legend(fontsize = 7)
-    for ax in axes_flat[len(classes):]:
-        ax.axis('off')
-
-    fig.suptitle('HV Progress over Time -- je Instanzklasse')
-    fig.tight_layout(rect = (0, 0, 1, 0.94))
-    out_path = os.path.join(out_dir, 'hv_progress.png')
-    fig.savefig(out_path, dpi = 150, bbox_inches = 'tight')
-    plt.close(fig)
-    return out_path
 
 
 def plot_cross_instance(df_cross, out_dir, n_instances):
@@ -677,9 +625,12 @@ def main():
                                 'vergleichbar sind); --instance wird dabei ignoriert.')
     parser.add_argument('--facet-class-instances', default = None,
                          help = 'Komma-getrennte Liste von Instanzpfaden (eine je Klasse) -- statt Einzel-'
-                                'Instanz oder --all-instances wird EIN Bild je Diagrammtyp mit einem Panel '
-                                'je Instanzklasse erzeugt (Boxplot/Violin/ECDF/Progress); rohe HV bleibt '
-                                'dabei nie ueber Instanzen gemischt. Ueberschreibt --instance/--all-instances.')
+                                'Instanz oder --all-instances wird EIN Bild je Diagrammtyp (Violin/ECDF) mit '
+                                'einem Panel je Instanzklasse erzeugt; rohe HV bleibt dabei nie ueber '
+                                'Instanzen gemischt. Boxplot/Progress bewusst weggelassen, da '
+                                'analyze_quality_by_size.py (--facet-by class) bzw. analyze_indicator_'
+                                'progress.py (--facet-by-class) dieselben Werte bereits liefern. '
+                                'Ueberschreibt --instance/--all-instances.')
     parser.add_argument('--algo-col', default = 'crossover',
                          help = "Spaltenname(n) der Algorithmus-/Operator-Bezeichnung, komma-getrennt fuer "
                                 "kombinierte Algorithmen (default: 'crossover'). Bei ex06 z.B. 'crossover,mutator', "
@@ -706,7 +657,7 @@ def main():
 
     if args.facet_class_instances:
         instances = args.facet_class_instances.split(',')
-        by_class_df, by_class_progress = {}, {}
+        by_class_df = {}
         for instance in instances:
             cls = infer_instance_class(instance)
             by_algo = collect_fronts(rows, args.registry_path, instance, algo_cols)
@@ -716,18 +667,15 @@ def main():
             by_algo_traj = collect_trajectories(rows, args.registry_path, instance, algo_cols)
             ref = determine_reference_point(by_algo, by_algo_traj)
             df = compute_hv_table(by_algo, ref)
-            df_progress = compute_hv_progress_table(by_algo_traj, ref)
             instance_label = os.path.basename(instance)
             by_class_df[cls] = (df, instance_label)
-            by_class_progress[cls] = (df_progress, instance_label)
             print(f'Klasse {cls}: Instanz = {instance} (Referenzpunkt: {ref})')
 
         out_dir = os.path.join(args.out, experiment_label, '_by_class')
         paths = plot_distributions_by_class(by_class_df, out_dir)
-        progress_path = plot_progress_by_class(by_class_progress, out_dir)
 
         print(f'\nPlots gespeichert in: {out_dir}')
-        for p in list(paths.values()) + [progress_path]:
+        for p in paths.values():
             print(f'  {p}')
         return
 

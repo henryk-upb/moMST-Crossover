@@ -146,3 +146,48 @@ class EdgeSamplerDominationCount(EdgeSampler):
         # set cummulated weights
         weights = [(max(dom_counter) - dom_counter[i]) + 1 for i in range(self.m)]
         self.cum_weights = list(itertools.accumulate(weights))
+
+
+class EdgeSamplerDominationCountPrecomputed:
+    """
+    Domination-count-biased sampling (see EdgeSamplerDominationCount) for callers
+    that need to repeatedly sample from a DIFFERENT, dynamically changing subset
+    of a fixed, large reference edge population -- e.g. a crossover operator whose
+    candidate pool depends on the current pair of parents, called many times over
+    an EA run.
+
+    The expensive O(m^2) non-dominated sorting (do_fast_nondominated_sorting) is
+    performed ONCE over the reference edge_list at construction time. sample_subset()
+    then draws from an arbitrary runtime subset of that reference set in O(k) time
+    using the precomputed per-edge weights, instead of re-sorting the (sub)population
+    on every call as a fresh EdgeSamplerDominationCount(subset) would.
+
+    Edges are identified by their (v, w) endpoints, so the subset passed to
+    sample_subset() must consist of Edge objects drawn from (or otherwise sharing
+    endpoints with) the reference edge_list.
+    """
+
+    def __init__(self, edge_list: list[Edge]) -> None:
+        """Initialise an EdgeSamplerDominationCountPrecomputed object."""
+        edge_weights = [e.get_cost() for e in edge_list]
+        _, dom_counter = do_fast_nondominated_sorting(edge_weights)
+        max_dc = max(dom_counter)
+        self._weight_by_key = {
+            (e.v, e.w): (max_dc - dom_counter[i]) + 1
+            for i, e in enumerate(edge_list)
+        }
+
+    def sample_subset(self, edges: list[Edge], k: int) -> list[Edge]:
+        """
+        Sample k > 1 edges with replacement from 'edges' (a subset of the
+        reference edge_list passed to __init__), biased by the precomputed
+        domination-count weights.
+
+        Args:
+            edges (list[Edge]): candidate subset to sample from.
+            k (int): the number of edges.
+        Returns:
+            list(Edge): list of Edge objects.
+        """
+        weights = [self._weight_by_key[(e.v, e.w)] for e in edges]
+        return random.choices(edges, weights = weights, k = k)

@@ -196,15 +196,15 @@ def plot_mean_rankings(agg, out_dir):
                 label = f'{algo} ({pct}%)' if len(budget_pcts) > 1 else algo
                 ax.plot(classes, line['mean_rank'], marker = 'o', color = colors[algo],
                          linestyle = style_for_pct[pct], label = label)
-        ax.set_xlabel('Instanzklasse')
-        ax.set_ylabel('Mittlerer Rang (niedriger = besser)')
+        ax.set_xlabel('Instance Class')
+        ax.set_ylabel('Mean Rank (lower = better)')
         ax.set_title(indicator)
         ax.invert_yaxis()
 
     handles, labels = axes[-1].get_legend_handles_labels()
     fig.legend(handles, labels, loc = 'center left', bbox_to_anchor = (1.0, 0.5),
                fontsize = 8, ncol = 1 + len(handles) // 25)
-    fig.suptitle('Mean Rankings je Indikator, gesplittet nach Instanzklasse')
+    fig.suptitle('Mean Rankings per Indicator, Split by Instance Class')
     fig.tight_layout(rect = (0, 0, 0.86, 0.96))
 
     out_path = os.path.join(out_dir, 'mean_rankings.png')
