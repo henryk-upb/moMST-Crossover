@@ -247,9 +247,9 @@ def main():
                                 'diese werden ausgewertet statt aller in der Registry gefundenen '
                                 '(z.B. eine zufaellig gewaehlte Instanz je Klasse statt ueber alle '
                                 'zu poolen)')
-    parser.add_argument('--indicators', default = 'HV,Epsilon,Delta_p',
+    parser.add_argument('--indicators', default = 'HV',
                          help = "Komma-getrennte Teilmenge von 'HV,Epsilon,Delta_p' -- nur diese "
-                                'werden berechnet/geplottet (default: alle drei)')
+                                'werden berechnet/geplottet (default: nur HV)')
     parser.add_argument('--out', default = 'figures/mean_rankings',
                          help = 'Ausgabeverzeichnis (default: figures/mean_rankings)')
     parser.add_argument('--label', default = '_all',

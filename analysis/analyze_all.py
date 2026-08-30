@@ -41,9 +41,13 @@ from analyze_hypervolume import get_git_info, read_params
 from analyze_quality_by_size import infer_instance_class, parse_registry_arg
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-STEPS = ['analyze_hypervolume', 'analyze_pf_and_convergence', 'analyze_quality_by_size',
-         'analyze_quality_by_class', 'analyze_mean_rankings', 'analyze_runtime',
-         'analyze_indicator_progress']
+STEPS = ['analyze_hypervolume', 'analyze_pf_and_convergence', 'analyze_pf_coverage',
+         'analyze_quality_by_size', 'analyze_quality_by_class', 'analyze_mean_rankings',
+         'analyze_runtime', 'analyze_indicator_progress']
+# analyze_pf_coverage laeuft nur im Default-Modus (braucht MEHRERE Instanzen je Klasse,
+# um Abdeckung/Blindspots zu zeigen) -- im --per-class-Modus wird bewusst nur eine
+# Instanz je Klasse ausgewertet, das passt nicht zusammen. Faellt dort daher unter
+# 'uebersprungen' statt 'FEHLER' in der Zusammenfassung.
 
 
 def script_path(name):
@@ -134,6 +138,14 @@ def run_per_class_steps(primary_path, primary_algo_col, registries, args, out_ro
     return steps_status
 
 
+def step_status_text(status):
+    '''status ist True (erfolgreich), False (fehlgeschlagen) oder None (fuer diesen
+    Modus nicht anwendbar, z.B. analyze_pf_coverage im --per-class-Modus).'''
+    if status is None:
+        return 'uebersprungen'
+    return 'ok' if status else 'FEHLER'
+
+
 def collect_diagrams(root):
     return sorted(os.path.relpath(p, root) for p in glob.glob(os.path.join(root, '**', '*.png'), recursive = True))
 
@@ -160,7 +172,7 @@ def archive_combined(archive_dir, label, note, out_root, steps_status):
                 + (" -- **uncommitted changes!**\n" if diffstat else "\n"))
         f.write("\n## Teilanalysen\n\n")
         for name in STEPS:
-            f.write(f"- {name}: {'ok' if steps_status.get(name) else 'FEHLER'}\n")
+            f.write(f"- {name}: {step_status_text(steps_status.get(name))}\n")
         if note:
             f.write(f"\n## Notiz\n\n{note}\n")
         f.write("\n## Diagramme\n\n")
@@ -174,7 +186,7 @@ def archive_combined(archive_dir, label, note, out_root, steps_status):
             f.write("# Gesamt-Analyse -- Verlauf\n\n")
             f.write("| Datum | Commit | Label | Teilanalysen | Notiz |\n|---|---|---|---|---|\n")
         rel_dir = os.path.relpath(entry_dir, archive_root)
-        status_str = ', '.join(f"{name}={'ok' if steps_status.get(name) else 'FEHLER'}" for name in STEPS)
+        status_str = ', '.join(f"{name}={step_status_text(steps_status.get(name))}" for name in STEPS)
         f.write(f"| [{timestamp}]({rel_dir}/summary.md) | {commit_label} | {label} | {status_str} | {note or ''} |\n")
 
     return entry_dir, diagram_paths
@@ -192,11 +204,18 @@ def main():
                          help = "Default-Algorithmus-Spalte(n) (komma-getrennt) fuer Registries "
                                 "ohne eigene ':SPALTE'-Angabe (default: 'operator')")
     parser.add_argument('--instance', default = None,
-                         help = 'Instanz fuer HV (Einzel-Modus) und PF+Konvergenz; default: erste '
-                                'in design.csv der ersten Registry gefundene Instanz')
+                         help = 'Instanz fuer HV (Einzel-Modus) und PF+Konvergenz; default: eine '
+                                'zufaellig gewaehlte Instanz aus der ersten Registry (dieselbe fuer '
+                                'beide, damit sie zusammenpassen)')
     parser.add_argument('--all-instances', action = 'store_true',
-                         help = 'HV-Analyse gepoolt ueber alle Instanzen der ersten Registry statt '
-                                'Einzel-Instanz (PF+Konvergenz bleibt immer Einzel-Instanz)')
+                         help = 'HV-Analyse gepoolt (rohe HV) ueber alle Instanzen der ersten Registry '
+                                'statt einer zufaellig gewaehlten Einzel-Instanz (PF+Konvergenz bleibt '
+                                'immer Einzel-Instanz); rohe HV ist ueber Instanzen unterschiedlicher '
+                                'Skala nicht direkt vergleichbar, siehe analyze_hypervolume.py')
+    parser.add_argument('--hide-first-gen', action = 'store_true',
+                         help = 'An analyze_pf_and_convergence.py durchgereicht: erste geloggte Generation '
+                                'im Konvergenz-Panel ausblenden, damit spaetere, feinere Unterschiede besser '
+                                'sichtbar sind (sinnvoll v.a. bei sehr langen Laeufen, z.B. 1000 Generationen)')
     parser.add_argument('--pool-instances', action = 'store_true',
                          help = 'quality_by_size gepoolt ueber alle Instanzen je Groesse statt '
                                 'einer repraesentativen Instanz')
@@ -213,10 +232,10 @@ def main():
     parser.add_argument('--budget-pcts', default = '10,100',
                          help = 'Komma-getrennte Budget-Prozentsaetze fuer analyze_mean_rankings.py '
                                 '(default: 10,100)')
-    parser.add_argument('--indicators', default = 'HV,Epsilon,Delta_p',
+    parser.add_argument('--indicators', default = 'HV',
                          help = "Komma-getrennte Teilmenge von 'HV,Epsilon,Delta_p' fuer "
-                                'analyze_mean_rankings.py (default: alle drei; im --per-class-Modus '
-                                'ohnehin immer nur HV)')
+                                'analyze_mean_rankings.py UND analyze_indicator_progress.py '
+                                '(default: nur HV; im --per-class-Modus ohnehin immer nur HV)')
     parser.add_argument('--progress-budget-pcts', default = '10,20,30,40,50,60,70,80,90,100',
                          help = 'Komma-getrennte Budget-Prozentsaetze (T) fuer '
                                 'analyze_indicator_progress.py -- feineres Zeitraster als '
@@ -256,16 +275,32 @@ def main():
                   '--no-archive']
         if args.all_instances:
             hv_cmd.append('--all-instances')
-        elif args.instance:
-            hv_cmd += ['--instance', args.instance]
+        else:
+            # single-instance mode: pick ONE instance up front (randomly, unless
+            # --instance was given explicitly) and pass it to both hv_cmd and
+            # pf_cmd so they show the SAME instance -- rather than letting each
+            # script fall back to its own default independently, which would
+            # pick two different (or, without randomisation, always the same
+            # "first found") instances
+            instance = args.instance or random.choice(
+                sorted(set(row['instance'] for row in read_params(os.path.join(primary_path, 'design.csv')))))
+            print(f'Instanz fuer HV-Analyse/PF+Konvergenz: {instance}')
+            hv_cmd += ['--instance', instance]
         steps_status['analyze_hypervolume'] = run_step(1, 'analyze_hypervolume.py', hv_cmd)
 
         pf_cmd = [sys.executable, script_path('analyze_pf_and_convergence.py'), primary_path,
                   '--algo-col', primary_algo_col, '--out', os.path.join(out_root, 'pf_and_convergence'),
                   '--no-archive']
-        if args.instance:
-            pf_cmd += ['--instance', args.instance]
+        if not args.all_instances:
+            pf_cmd += ['--instance', instance]
+        if args.hide_first_gen:
+            pf_cmd.append('--hide-first-gen')
         steps_status['analyze_pf_and_convergence'] = run_step(2, 'analyze_pf_and_convergence.py', pf_cmd)
+
+        coverage_cmd = [sys.executable, script_path('analyze_pf_coverage.py'), primary_path,
+                         '--algo-col', primary_algo_col, '--out', os.path.join(out_root, 'pf_coverage'),
+                         '--no-archive']
+        steps_status['analyze_pf_coverage'] = run_step(3, 'analyze_pf_coverage.py', coverage_cmd)
 
         # analyze_quality_by_size.py, analyze_mean_rankings.py und analyze_runtime.py haben (noch)
         # keine eigene --no-archive/--archive-dir-Option -- sie archivieren nie selbst, daher hier weglassen
@@ -273,7 +308,7 @@ def main():
                     '--algo-col', args.algo_col, '--out', os.path.join(out_root, 'quality_by_size')]
         if args.pool_instances:
             size_cmd.append('--pool-instances')
-        steps_status['analyze_quality_by_size'] = run_step(3, 'analyze_quality_by_size.py (--facet-by size)', size_cmd)
+        steps_status['analyze_quality_by_size'] = run_step(4, 'analyze_quality_by_size.py (--facet-by size)', size_cmd)
 
         # zusaetzlich nach Instanzklasse facettiert: bei Registries wie ex07, wo alle Instanzen
         # dieselbe Groesse haben, ist das die aussagekraeftigere Ansicht (rohe HV, nie ueber
@@ -283,26 +318,27 @@ def main():
                      '--out', os.path.join(out_root, 'quality_by_class')]
         if args.pool_instances:
             class_cmd.append('--pool-instances')
-        steps_status['analyze_quality_by_class'] = run_step(4, 'analyze_quality_by_size.py (--facet-by class)', class_cmd)
+        steps_status['analyze_quality_by_class'] = run_step(5, 'analyze_quality_by_size.py (--facet-by class)', class_cmd)
 
         rankings_cmd = [sys.executable, script_path('analyze_mean_rankings.py'), *args.registries,
                          '--algo-col', args.algo_col, '--budget-pcts', args.budget_pcts,
                          '--indicators', args.indicators,
                          '--out', os.path.join(out_root, 'mean_rankings')]
-        steps_status['analyze_mean_rankings'] = run_step(5, 'analyze_mean_rankings.py', rankings_cmd)
+        steps_status['analyze_mean_rankings'] = run_step(6, 'analyze_mean_rankings.py', rankings_cmd)
 
         runtime_cmd = [sys.executable, script_path('analyze_runtime.py'), *args.registries,
                         '--algo-col', args.algo_col, '--out', os.path.join(out_root, 'runtime')]
-        steps_status['analyze_runtime'] = run_step(6, 'analyze_runtime.py', runtime_cmd)
+        steps_status['analyze_runtime'] = run_step(7, 'analyze_runtime.py', runtime_cmd)
 
         progress_cmd = [sys.executable, script_path('analyze_indicator_progress.py'), *args.registries,
                          '--algo-col', args.algo_col, '--budget-pcts', args.progress_budget_pcts,
+                         '--indicators', args.indicators,
                          '--out', os.path.join(out_root, 'indicator_progress')]
-        steps_status['analyze_indicator_progress'] = run_step(7, 'analyze_indicator_progress.py', progress_cmd)
+        steps_status['analyze_indicator_progress'] = run_step(8, 'analyze_indicator_progress.py', progress_cmd)
 
     print(f"\n{'=' * 70}\nZusammenfassung\n{'=' * 70}")
     for name in STEPS:
-        print(f"  {name}: {'ok' if steps_status.get(name) else 'FEHLER'}")
+        print(f"  {name}: {step_status_text(steps_status.get(name))}")
 
     if not any(steps_status.values()):
         raise SystemExit(f'\nAlle {len(STEPS)} Teilanalysen sind fehlgeschlagen -- nichts zum Archivieren.')

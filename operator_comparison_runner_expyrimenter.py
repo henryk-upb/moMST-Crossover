@@ -24,6 +24,8 @@ from EA.Operators import (
     XORCrossoverPrioritized,
     UnionCrossoverInterleaved,
     IntersectionCrossoverInterleaved,
+    XORCrossoverPrioritizedInterleaved,
+    XORCrossoverAsymmetricInterleaved,
 )
 from EA.utils.RandomWeightSampler import WeightSampler, RandomWeightSampler, EquidistantWeightSampler
 from EA.utils.EdgeSampler import EdgeSampler, EdgeSamplerUniform
@@ -56,11 +58,22 @@ longer run; a follow-up comparison (2026-08-22 full report, ex07 n=50) found
 USGS-PRE to be consistently faster than USGS-F (pre-sorted edge lists avoid
 the O(log m) per-call re-sort) and at least as good on HV/Epsilon when paired
 with a crossover, so USGS-F was dropped too.
+
+XORCrossoverAsymmetric/XORCrossoverPrioritized (XOR-A/XOR-P) are excluded
+from CROSSOVER_OPERATORS: diagnosed root cause was that their inherited
+parent edges bypass lambda-scalarisation entirely (raw insertion order),
+so they consistently ranked worst among all crossover operators (HV
+boxplot: ~35-40% relative HV vs. ~90-100% for the others). Superseded by
+XORCrossoverAsymmetricInterleaved/XORCrossoverPrioritizedInterleaved
+(XOR-A-I/XOR-P-I), which apply the same lambda-ordered-interleaving fix
+used by Union/IntersectionCrossoverInterleaved and close most (not all) of
+that gap. XOR-A/XOR-P remain defined in EA/Operators.py and reachable via
+setup_crossover() if ever needed again, just not run by default.
 '''
 
 REGISTRY_PATH = "results/approximations/ex07"
 
-CROSSOVER_OPERATORS = ["UNION", "INTER", "XOR", "XOR-A", "XOR-P", "UNION-I", "INTER-I"]
+CROSSOVER_OPERATORS = ["UNION", "INTER", "XOR", "UNION-I", "INTER-I", "XOR-P-I", "XOR-A-I"]
 MUTATION_OPERATORS = ["USGS-PRE"]
 HYBRID_MUTATORS = ["USGS-PRE"]
 HYBRID_P_CROSSOVER = 0.5
@@ -91,6 +104,10 @@ def setup_crossover(graph, crossover, n):
         crossover_object = UnionCrossoverInterleaved(graph, edge_orderer, weight_sampler)
     elif crossover == "INTER-I":
         crossover_object = IntersectionCrossoverInterleaved(graph, edge_orderer, weight_sampler)
+    elif crossover == "XOR-P-I":
+        crossover_object = XORCrossoverPrioritizedInterleaved(graph, edge_orderer, weight_sampler)
+    elif crossover == "XOR-A-I":
+        crossover_object = XORCrossoverAsymmetricInterleaved(graph, edge_orderer, weight_sampler)
 
     return lambda x, y: crossover_object.create(x, y)
 
@@ -140,7 +157,7 @@ def make_runner(registry_path, max_gens=None):
         n = graph.get_n()
 
         MU = 100
-        LAMBDAA = 10
+        LAMBDAA = 100
         gens = max_gens if max_gens is not None else 100
         max_evals = MU + LAMBDAA * gens
 

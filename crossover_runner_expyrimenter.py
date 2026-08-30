@@ -21,6 +21,8 @@ from EA.Operators import (
     XORCrossoverPrioritized,
     UnionCrossoverInterleaved,
     IntersectionCrossoverInterleaved,
+    XORCrossoverPrioritizedInterleaved,
+    XORCrossoverAsymmetricInterleaved,
 )
 from EA.utils.RandomWeightSampler import WeightSampler, RandomWeightSampler, EquidistantWeightSampler
 from EA.utils.EdgeSampler import EdgeSampler, EdgeSamplerUniform
@@ -56,6 +58,10 @@ def setup_crossover(graph, crossover, n):
         crossover_object = UnionCrossoverInterleaved(graph, edge_orderer, weight_sampler)
     elif crossover == "INTER-I":
         crossover_object = IntersectionCrossoverInterleaved(graph, edge_orderer, weight_sampler)
+    elif crossover == "XOR-P-I":
+        crossover_object = XORCrossoverPrioritizedInterleaved(graph, edge_orderer, weight_sampler)
+    elif crossover == "XOR-A-I":
+        crossover_object = XORCrossoverAsymmetricInterleaved(graph, edge_orderer, weight_sampler)
 
     return lambda x, y: crossover_object.create(x, y)
 
@@ -85,7 +91,7 @@ def make_runner(registry_path, max_gens=None):
         n = graph.get_n()
 
         MU = 100
-        LAMBDAA = 10
+        LAMBDAA = 100
         gens = max_gens if max_gens is not None else 100
         max_evals = MU + LAMBDAA * gens
 
@@ -127,7 +133,7 @@ if __name__ == "__main__":
     # ---- full-scale design (mirrors the old ex05_parameters.py grid) ----
     path_to_instances = "instances/100"
     instances = [os.path.join(path_to_instances, f) for f in os.listdir(path_to_instances)]
-    crossovers = ["UNION", "INTER", "XOR", "XOR-A", "XOR-P", "UNION-I", "INTER-I"]
+    crossovers = ["UNION", "INTER", "XOR", "UNION-I", "INTER-I", "XOR-P-I", "XOR-A-I"]
     repls = list(range(1, 11))  # 10 independent reps, as in ex05_parameters.py
 
     # example use of the predicate feature Jakob just added: exclude a

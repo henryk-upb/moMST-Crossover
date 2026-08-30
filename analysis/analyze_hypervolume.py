@@ -70,6 +70,7 @@ import argparse
 import csv
 import math
 import os
+import random
 import shutil
 import subprocess
 from datetime import datetime
@@ -233,6 +234,33 @@ def holm_correction(pvals):
     return adjusted
 
 
+def plot_ecdf_with_band(ax, vals, label, n_boot = 200, band_q = (0.25, 0.75), rng = None):
+    '''Draws one algorithm's ECDF as a step function plus a shaded bootstrap
+    band showing how much the ECDF curve itself varies given only len(vals)
+    repetitions: n_boot resamples (with replacement) of vals are each turned
+    into their own ECDF (evaluated on the same x-grid as the real curve, i.e.
+    the sorted observed values), and the band_q quantiles of those resampled
+    curves are shaded around the real one. With very few repetitions (as is
+    typical here, R ~ 10) the band is necessarily coarse, but still conveys
+    the sampling uncertainty a single-repetitions-worth ECDF otherwise hides.'''
+    vals = np.sort(np.asarray(vals, dtype = float))
+    n = len(vals)
+    y = np.arange(1, n + 1) / n
+    line, = ax.step(vals, y, where = 'post', label = label)
+
+    if n_boot and n > 1:
+        rng = rng if rng is not None else np.random.default_rng()
+        boot = np.empty((n_boot, n))
+        for b in range(n_boot):
+            sample = np.sort(rng.choice(vals, size = n, replace = True))
+            boot[b] = np.searchsorted(sample, vals, side = 'right') / n
+        low = np.quantile(boot, band_q[0], axis = 0)
+        high = np.quantile(boot, band_q[1], axis = 0)
+        ax.fill_between(vals, low, high, step = 'post', color = line.get_color(), alpha = 0.15)
+
+    return line
+
+
 def plot_distributions(df, out_dir, instance_label):
     os.makedirs(out_dir, exist_ok = True)
     algos = sorted(df['algorithm'].unique())
@@ -287,9 +315,8 @@ def plot_distributions(df, out_dir, instance_label):
 
     fig, ax = plt.subplots(figsize = (width + 2, 4.5))
     for algo in algos:
-        vals = np.sort(df.loc[df['algorithm'] == algo, 'hv'].values)
-        y = np.arange(1, len(vals) + 1) / len(vals)
-        ax.step(vals, y, where = 'post', label = algo)
+        vals = df.loc[df['algorithm'] == algo, 'hv'].values
+        plot_ecdf_with_band(ax, vals, algo)
     ax.set_xlabel('Hypervolume')
     ax.set_ylabel('F(x)')
     ax.set_title(f'Empirical Distribution Function (ECDF)\n{instance_label}')
@@ -376,9 +403,8 @@ def plot_distributions_by_class(by_class, out_dir):
         df, instance_label = by_class[cls]
         algos = sorted(df['algorithm'].unique())
         for algo in algos:
-            vals = np.sort(df.loc[df['algorithm'] == algo, 'hv'].values)
-            y = np.arange(1, len(vals) + 1) / len(vals)
-            ax.step(vals, y, where = 'post', label = algo)
+            vals = df.loc[df['algorithm'] == algo, 'hv'].values
+            plot_ecdf_with_band(ax, vals, algo)
         ax.set_xlabel('Hypervolume')
         ax.set_ylabel('F(x)')
         ax.set_title(f'Class {cls}\n{instance_label}', fontsize = 9)
@@ -405,10 +431,14 @@ def plot_cross_instance(df_cross, out_dir, n_instances):
     Note: raw HV is only really comparable within one instance (its scale
     depends on the instance/n); pooling it across instances of different
     scale/size means the spread within each algorithm's box is dominated by
-    inter-instance differences, not just inter-algorithm ones. Kept as
-    plain/absolute values on request; see compute_cross_instance_table's
-    'rank'/'relative_pct' columns in hv_cross_instance.csv for a
-    scale-independent alternative if needed later.
+    inter-instance differences, not just inter-algorithm ones. This mode is
+    opt-in (--all-instances) and no longer the default (see main(): the
+    default single-instance mode picks one random instance instead so these
+    three plots show real, unadjusted HV without mixing scales at all); kept
+    available as plain/absolute values on request -- see
+    compute_cross_instance_table's 'rank'/'relative_pct' columns in
+    hv_cross_instance.csv for a scale-independent alternative if pooling is
+    ever needed again.
     '''
     os.makedirs(out_dir, exist_ok = True)
     mean_hv = df_cross.groupby('algorithm')['hv'].mean().sort_values(ascending = False)
@@ -445,9 +475,8 @@ def plot_cross_instance(df_cross, out_dir, n_instances):
 
     fig, ax = plt.subplots(figsize = (width, 4.5))
     for algo in algos:
-        vals = np.sort(df_cross.loc[df_cross['algorithm'] == algo, 'hv'].values)
-        y = np.arange(1, len(vals) + 1) / len(vals)
-        ax.step(vals, y, where = 'post', label = algo)
+        vals = df_cross.loc[df_cross['algorithm'] == algo, 'hv'].values
+        plot_ecdf_with_band(ax, vals, algo)
     ax.set_xlabel('Hypervolume')
     ax.set_ylabel('F(x)')
     ax.set_title(f'ECDF of HV over All Instances\n{subtitle}')
@@ -618,7 +647,7 @@ def main():
     parser.add_argument('registry_path',
                          help = 'z.B. results/approximations/ex05 (enthaelt design.csv und experiments/<jobid>/pf.csv)')
     parser.add_argument('--instance', default = None,
-                         help = 'Instanzpfad wie in design.csv; Default: erste in design.csv gefundene Instanz')
+                         help = 'Instanzpfad wie in design.csv; Default: zufaellig gewaehlte Instanz')
     parser.add_argument('--all-instances', action = 'store_true',
                          help = 'Statt einer einzelnen Instanz alle Instanzen aus design.csv gepoolt auswerten '
                                 '(Rang- und Relativ-HV-basiert, da rohe HV-Werte zwischen Instanzen nicht '
@@ -706,7 +735,7 @@ def main():
             print(f"Verlaufs-Uebersicht: {os.path.join(args.archive_dir, experiment_label, 'CHANGELOG.md')}")
         return
 
-    instance = args.instance or rows[0]['instance']
+    instance = args.instance or random.choice(sorted(set(row['instance'] for row in rows)))
     instance_label = os.path.basename(instance)
 
     by_algo = collect_fronts(rows, args.registry_path, instance, algo_cols)

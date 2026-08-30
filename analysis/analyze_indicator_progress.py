@@ -51,14 +51,18 @@ INDICATOR_ORDER = ['HV', 'Epsilon', 'Delta_p']
 
 
 def compute_rank_progress(df):
-    '''Rang je (instance, repl, indicator)-Block (1 = bester Wert), dann
+    '''Rang je (instance, repl, budget_pct, indicator)-Block (1 = bester Wert)
+    -- Algorithmen werden also nur gegen andere Algorithmen auf DERSELBEN
+    Budget-Stufe verglichen, nie ueber Zeitpunkte hinweg gemischt (sonst
+    wuerden fruehe, notwendigerweise niedrigere Rohwerte systematisch
+    schlechter gerankt als spaete, unabhaengig vom Algorithmus) -- dann
     gepoolt ueber ALLE Instanzen/Wiederholungen aggregiert je (algorithm,
     budget_pct, indicator). Long-format Rueckgabe mit Spalten algorithm,
     budget_pct, indicator, mean, median, q25, q75, n.'''
     ranked = []
     for indicator, higher_is_better in HIGHER_IS_BETTER.items():
         sub = df[df['indicator'] == indicator].copy()
-        sub['rank'] = sub.groupby(['instance', 'repl'])['value'] \
+        sub['rank'] = sub.groupby(['instance', 'repl', 'budget_pct'])['value'] \
             .rank(ascending = not higher_is_better, method = 'average')
         ranked.append(sub)
     df_ranked = pd.concat(ranked, ignore_index = True)
@@ -225,9 +229,9 @@ def main():
                                 'einem Panel je Instanzklasse erzeugt (2x2 bei 4 Klassen), rohe Werte '
                                 'je Klasse -- gedacht fuer --instances mit genau einer Instanz je '
                                 'Klasse. Erzwingt --raw-value und genau EINEN Indikator (--indicators).')
-    parser.add_argument('--indicators', default = 'HV,Epsilon,Delta_p',
+    parser.add_argument('--indicators', default = 'HV',
                          help = "Komma-getrennte Teilmenge von 'HV,Epsilon,Delta_p' -- nur diese "
-                                'werden berechnet/geplottet (default: alle drei)')
+                                'werden berechnet/geplottet (default: nur HV)')
     parser.add_argument('--out', default = 'figures/indicator_progress',
                          help = 'Ausgabeverzeichnis (default: figures/indicator_progress)')
     parser.add_argument('--label', default = '_all',
