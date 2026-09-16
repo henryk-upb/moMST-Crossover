@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+
+figures/
+results/approximations/
+analysis_log/
+results/

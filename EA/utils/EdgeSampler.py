@@ -4,6 +4,8 @@ from Graph.Edge import Edge
 import random
 import itertools
 
+import numpy as np
+
 
 def do_fast_nondominated_sorting(points: list[list[float]]) -> tuple[list[int], list[int]]:
     """
@@ -146,3 +148,77 @@ class EdgeSamplerDominationCount(EdgeSampler):
         # set cummulated weights
         weights = [(max(dom_counter) - dom_counter[i]) + 1 for i in range(self.m)]
         self.cum_weights = list(itertools.accumulate(weights))
+
+
+def _compute_domination_counts_vectorised(points: list[list[float]]) -> list[int]:
+    """
+    For each point, count how many OTHER points strictly Pareto-dominate it
+    (minimisation: all(x[k] <= y[k]) and any(x[k] < y[k])), via numpy
+    broadcasting instead of a pure-Python double loop.
+
+    This is a private helper for EdgeSamplerDominationCountPrecomputed ONLY
+    -- it deliberately does not replace or modify do_fast_nondominated_sorting
+    (the established Deb et al. implementation used elsewhere in the
+    codebase), which stays untouched. It exists because
+    EdgeSamplerDominationCountPrecomputed runs the domination count over
+    whole graph edge sets (m in the low thousands for near-complete graphs),
+    where do_fast_nondominated_sorting's O(m^2) pure-Python loop takes
+    several seconds per call -- too slow to run once per crossover-operator
+    construction across a full batch of EA runs.
+    """
+    n = len(points)
+    if n == 0:
+        return []
+    pts = np.asarray(points, dtype = float)
+    le = np.all(pts[:, None, :] <= pts[None, :, :], axis = 2)
+    lt_any = np.any(pts[:, None, :] < pts[None, :, :], axis = 2)
+    dominates_matrix = le & lt_any
+    return dominates_matrix.sum(axis = 0).tolist()
+
+
+class EdgeSamplerDominationCountPrecomputed:
+    """
+    Domination-count-biased sampling (see EdgeSamplerDominationCount) for callers
+    that need to repeatedly sample from a DIFFERENT, dynamically changing subset
+    of a fixed, large reference edge population -- e.g. a crossover operator whose
+    candidate pool depends on the current pair of parents, called many times over
+    an EA run.
+
+    The domination count is computed ONCE over the reference edge_list at
+    construction time (via _compute_domination_counts_vectorised, see there
+    for why this uses a separate, vectorised implementation rather than
+    do_fast_nondominated_sorting). sample_subset() then draws from an
+    arbitrary runtime subset of that reference set in O(k) time using the
+    precomputed per-edge weights, instead of re-computing the (sub)population's
+    domination counts on every call as a fresh EdgeSamplerDominationCount(subset)
+    would.
+
+    Edges are identified by their (v, w) endpoints, so the subset passed to
+    sample_subset() must consist of Edge objects drawn from (or otherwise sharing
+    endpoints with) the reference edge_list.
+    """
+
+    def __init__(self, edge_list: list[Edge]) -> None:
+        """Initialise an EdgeSamplerDominationCountPrecomputed object."""
+        edge_weights = [e.get_cost() for e in edge_list]
+        dom_counter = _compute_domination_counts_vectorised(edge_weights)
+        max_dc = max(dom_counter)
+        self._weight_by_key = {
+            (e.v, e.w): (max_dc - dom_counter[i]) + 1
+            for i, e in enumerate(edge_list)
+        }
+
+    def sample_subset(self, edges: list[Edge], k: int) -> list[Edge]:
+        """
+        Sample k > 1 edges with replacement from 'edges' (a subset of the
+        reference edge_list passed to __init__), biased by the precomputed
+        domination-count weights.
+
+        Args:
+            edges (list[Edge]): candidate subset to sample from.
+            k (int): the number of edges.
+        Returns:
+            list(Edge): list of Edge objects.
+        """
+        weights = [self._weight_by_key[(e.v, e.w)] for e in edges]
+        return random.choices(edges, weights = weights, k = k)
