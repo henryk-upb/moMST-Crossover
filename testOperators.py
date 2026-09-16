@@ -1,4 +1,4 @@
-from EA.Operators import UnionCrossover, IntersectionCrossover, XORCrossover
+from EA.Operators import UnionCrossover, IntersectionCrossoverSampled, XORCrossoverSampled
 from Graph.generators.GraphGenerator import GraphGenerator
 from Graph.generators.RandomSpanningTreeGenerator import RandomSpanningTreeGenerator
 from EA.utils.EdgeOrderer import EdgeOrdererRandom, EdgeOrdererExact
@@ -45,8 +45,8 @@ for g in gs:
         edge_sampler = EdgeSamplerUniform(g.get_edges())
         weight_sampler = RandomWeightSampler()
         union = UnionCrossover(g, edge_orderer = edge_orderer, weight_sampler = weight_sampler)
-        inter = IntersectionCrossover(g, edge_sampler= edge_sampler, edge_orderer = edge_orderer, weight_sampler = weight_sampler, sigma = sigma)
-        xor = XORCrossover(g, edge_sampler= edge_sampler, edge_orderer = edge_orderer, weight_sampler = weight_sampler, sigma = sigma)
+        inter = IntersectionCrossoverSampled(g, edge_sampler= edge_sampler, edge_orderer = edge_orderer, weight_sampler = weight_sampler, sigma = sigma)
+        xor = XORCrossoverSampled(g, edge_sampler= edge_sampler, edge_orderer = edge_orderer, weight_sampler = weight_sampler, sigma = sigma)
 
 
         for repl in range(1, R + 1):

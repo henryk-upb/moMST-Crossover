@@ -1,0 +1,17 @@
+{
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "results/approximations": true
+    },
+    "search.exclude": {
+        "results": true,
+        "figures": true,
+        "**/__pycache__": true
+    },
+    "files.watcherExclude": {
+        "results/**": true,
+        "figures/**": true,
+        "**/__pycache__/**": true
+    }
+}

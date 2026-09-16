@@ -18,8 +18,8 @@ from Graph.Graph import Graph
 from EA.Operators import USGMutator, SGSSimplifiedMutator, USGMutatorWithPresorting, InsertionFirstGlobalMutator, InsertionFirstLocalMutator
 from EA.Operators import (
     UnionCrossover,
-    IntersectionCrossover,
-    XORCrossover,
+    IntersectionCrossoverSampled,
+    XORCrossoverSampled,
     XORCrossoverAsymmetric,
     XORCrossoverPrioritized,
     UnionCrossoverInterleaved,
@@ -50,9 +50,9 @@ def setup_crossover(graph, crossover, n):
     if crossover == "UNION":
         crossover_object = UnionCrossover(graph, edge_orderer, weight_sampler)
     elif crossover == "INTER":
-        crossover_object = IntersectionCrossover(graph, edge_sampler, edge_orderer, weight_sampler, sigma=sigma)
+        crossover_object = IntersectionCrossoverSampled(graph, edge_sampler, edge_orderer, weight_sampler, sigma=sigma)
     elif crossover == "XOR":
-        crossover_object = XORCrossover(graph, edge_sampler, edge_orderer, weight_sampler, sigma=sigma)
+        crossover_object = XORCrossoverSampled(graph, edge_sampler, edge_orderer, weight_sampler, sigma=sigma)
     elif crossover == "XOR-A":
         crossover_object = XORCrossoverAsymmetric(graph, edge_orderer, weight_sampler)
     elif crossover == "XOR-P":

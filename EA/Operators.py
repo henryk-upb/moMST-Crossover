@@ -1166,9 +1166,10 @@ class UnionCrossover(Recombinator):
 
         return self.child
     
-class IntersectionCrossover(Recombinator):
+class IntersectionCrossoverSampled(Recombinator):
     """
-    Intersection Crossover (IX) recombination operator.
+    Intersection Crossover (IX-S) recombination operator -- candidate pool
+    extended with additional randomly sampled edges.
 
     Edges shared by both parent spanning trees (the intersection) are inherited
     directly into the child and stay fixed. The remaining edges needed to
@@ -1190,7 +1191,7 @@ class IntersectionCrossover(Recombinator):
         sigma: int | None = None,
     ) -> None:
         """
-        Initialise an IntersectionCrossover object.
+        Initialise an IntersectionCrossoverSampled object.
 
         Args:
             graph (Graph): the source graph.
@@ -1216,7 +1217,7 @@ class IntersectionCrossover(Recombinator):
 
     def create(self, tree1: Graph, tree2: Graph) -> Graph:
         """
-        Produce a new spanning tree based on the IntersectionCrossover logic.
+        Produce a new spanning tree based on the IntersectionCrossoverSampled logic.
 
         Args:
             tree1 (Graph): the first parent spanning tree.
@@ -1264,11 +1265,103 @@ class IntersectionCrossover(Recombinator):
 
         return self.child
     
-class XORCrossover(Recombinator):
+class IntersectionCrossover(Recombinator):
     """
-    XOR Crossover (XOR) recombination operator.
+    Intersection Crossover (IX) recombination operator -- exact formalisation.
 
-    Unlike IntersectionCrossover, the intersection of both parent spanning trees
+    Direct implementation of the Intersection-CX algorithm as formalised in
+    the thesis. Edges shared by both parent spanning trees (the intersection
+    I = E(T1) n E(T2)) are inherited directly into the child and stay fixed.
+    The remaining edges needed to complete the spanning tree are chosen by
+    Kruskal-relinking over exactly the candidate pool
+    R = (E(T1) u E(T2)) \\ I, scalarised with a random weight vector -- no
+    edges from outside the two parents are ever considered.
+
+    For the variant actually used in the experiments, which additionally
+    injects a linear (in the number of nodes) number of randomly sampled
+    edges from the source graph into the candidate pool, see
+    IntersectionCrossoverSampled.
+
+    Spanning tree constraints: not supported.
+    """
+
+    def __init__(
+        self,
+        graph: Graph,
+        edge_orderer: EdgeOrderer | None = None,
+        weight_sampler: WeightSampler | None = None,
+    ) -> None:
+        """
+        Initialise an IntersectionCrossover object.
+
+        Args:
+            graph (Graph): the source graph.
+            edge_orderer (EdgeOrderer): strategy for ordering the candidate
+                edges R before passing down to KruskalRelink. Defaults to an
+                instance of EdgeOrdererExact.
+            weight_sampler (WeightSampler): an object of class RandomWeightSampler
+                which is used to sample weights for the scalarisation part.
+        """
+        super().__init__()
+
+        self.graph = graph
+        self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
+        self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
+
+    def create(self, tree1: Graph, tree2: Graph) -> Graph:
+        """
+        Produce a new spanning tree based on the IntersectionCrossover logic.
+
+        Args:
+            tree1 (Graph): the first parent spanning tree.
+            tree2 (Graph): the second parent spanning tree.
+
+        Returns:
+            A spanning tree.
+        """
+        assert tree1.is_spanning_tree()
+        assert tree2.is_spanning_tree()
+
+        q = tree1.get_q()
+
+        # child starts out empty; edges present in both parents (the
+        # intersection I) are inherited directly and stay fixed from here on
+        self.child = tree1.copy(copy_edges = False)
+
+        # R = (E(T1) u E(T2)) \ I: the union of both parents' edges minus
+        # the intersection edges, which are already fixed into self.child
+        # above -- exactly the candidate pool from the formalisation, no
+        # edges from outside the two parents are added
+        candidate_edges = [e for e in tree1.get_edges() if not tree2.has_edge(e.v, e.w)]
+
+        for e in tree2.get_edges():
+            if tree1.has_edge(e.v, e.w):
+                self.child.add_edge(e.copy(), check_exists = False)
+            else:
+                candidate_edges.append(e)
+
+        # sample random weight vector
+        lambdas = self.weight_sampler.sample(q)[0]
+
+        relevant_edges = self.edge_orderer.order(candidate_edges, lambdas)
+
+        self.child = KruskalRelink(
+            self.graph,
+            relevant_edges,
+            self.child
+        ).solve().get_solution()
+
+        assert self.child.is_spanning_tree()
+
+        return self.child
+
+
+class XORCrossoverSampled(Recombinator):
+    """
+    XOR Crossover (XOR-S) recombination operator -- candidate pool extended
+    with additional randomly sampled edges.
+
+    Unlike IntersectionCrossoverSampled, the intersection of both parent spanning trees
     is not fixed upfront: relinking starts from the empty graph (V, {}), using a
     candidate pool made up of the symmetric difference of both parents' edges
     plus a linear (in the number of nodes) number of additional randomly sampled
@@ -1288,7 +1381,7 @@ class XORCrossover(Recombinator):
         sigma: int | None = None,
     ) -> None:
         """
-        Initialise an XORCrossover object.
+        Initialise an XORCrossoverSampled object.
 
         Args:
             graph (Graph): the source graph.
@@ -1314,7 +1407,7 @@ class XORCrossover(Recombinator):
     
     def create(self, tree1: Graph, tree2: Graph) -> Graph:
         """
-        Produce a new spanning tree based on the XORCrossover logic.
+        Produce a new spanning tree based on the XORCrossoverSampled logic.
 
         Args:
             tree1 (Graph): the first parent spanning tree.
@@ -1328,7 +1421,7 @@ class XORCrossover(Recombinator):
 
         q = tree1.get_q()
 
-        # unlike IntersectionCrossover, the intersection is NOT fixed upfront
+        # unlike IntersectionCrossoverSampled, the intersection is NOT fixed upfront
         # here; relinking starts from the empty graph (V, {}) and the
         # intersection edges are only added back as candidates further below
         # if the symmetric difference alone cannot connect all nodes
@@ -1376,6 +1469,107 @@ class XORCrossover(Recombinator):
         return self.child
 
 
+class XORCrossover(Recombinator):
+    """
+    XOR Crossover (XOR) recombination operator -- exact formalisation.
+
+    Direct implementation of the XOR-CX algorithm as formalised in the
+    thesis. Relinking starts from the empty graph (V, {}), using exactly
+    the candidate pool R = E(T1) XOR E(T2) (the symmetric difference of
+    both parents' edges), scalarised with a random weight vector. Only if
+    the symmetric difference alone would not be able to connect all nodes
+    are the intersection edges I = E(T1) n E(T2) added back into the
+    candidate pool as a fallback. No edges from outside the two parents
+    are ever considered.
+
+    For the variant actually used in the experiments, which additionally
+    injects a linear (in the number of nodes) number of randomly sampled
+    edges from the source graph into the candidate pool, see
+    XORCrossoverSampled.
+
+    Spanning tree constraints: not supported.
+    """
+
+    def __init__(
+        self,
+        graph: Graph,
+        edge_orderer: EdgeOrderer | None = None,
+        weight_sampler: WeightSampler | None = None,
+    ) -> None:
+        """
+        Initialise an XORCrossover object.
+
+        Args:
+            graph (Graph): the source graph.
+            edge_orderer (EdgeOrderer): strategy for ordering the candidate
+                edges R before passing down to KruskalRelink. Defaults to an
+                instance of EdgeOrdererExact.
+            weight_sampler (WeightSampler): an object of class RandomWeightSampler
+                which is used to sample weights for the scalarisation part.
+        """
+        super().__init__()
+
+        self.graph = graph
+        self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
+        self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
+
+    def create(self, tree1: Graph, tree2: Graph) -> Graph:
+        """
+        Produce a new spanning tree based on the XORCrossover logic.
+
+        Args:
+            tree1 (Graph): the first parent spanning tree.
+            tree2 (Graph): the second parent spanning tree.
+
+        Returns:
+            A spanning tree.
+        """
+        assert tree1.is_spanning_tree()
+        assert tree2.is_spanning_tree()
+
+        q = tree1.get_q()
+
+        # relinking starts from the empty graph (V, {}); the intersection
+        # edges are only added back as candidates further below if the
+        # symmetric difference alone cannot connect all nodes
+        self.child = tree1.copy(copy_edges = False)
+
+        # symmetric difference of both parents' edges: edges present in
+        # exactly one of the two parent trees
+        intersection_edges = []
+        candidate_edges = [e for e in tree1.get_edges() if not tree2.has_edge(e.v, e.w)]
+
+        for e in tree2.get_edges():
+            if tree1.has_edge(e.v, e.w):
+                intersection_edges.append(e)
+            else:
+                candidate_edges.append(e)
+
+        # if (V, R) is not connected, the symmetric difference alone cannot
+        # span all nodes -- fall back to also offering the intersection
+        # edges as candidates
+        sym_diff_graph = tree1.copy(copy_edges = False)
+        for e in candidate_edges:
+            sym_diff_graph.add_edge(e.copy(), check_exists = False)
+        if not CC(sym_diff_graph).is_connected():
+            candidate_edges = candidate_edges + intersection_edges
+
+        # sample random weight vector
+        lambdas = self.weight_sampler.sample(q)[0]
+
+        relevant_edges = self.edge_orderer.order(candidate_edges, lambdas)
+
+        self.child = KruskalRelink(
+            self.graph,
+            relevant_edges,
+            self.child
+        ).solve().get_solution()
+
+        assert self.child.is_spanning_tree()
+
+        return self.child
+
+
 class XORCrossoverAsymmetric(Recombinator):
     """
     Asymmetric XOR Crossover (XOR-A) recombination operator.
@@ -1394,7 +1588,7 @@ class XORCrossoverAsymmetric(Recombinator):
     already fixed above are simply skipped and the remaining gaps are
     filled greedily in lambda-order.
 
-    Unlike IntersectionCrossover and XORCrossover, no additional edges are
+    Unlike IntersectionCrossoverSampled and XORCrossoverSampled, no additional edges are
     sampled from outside the two parents: the candidate pool stays strictly
     within E(T1) u E(T2).
 
@@ -1504,8 +1698,8 @@ class XORCrossoverPrioritized(Recombinator):
     edges (in lambda-order) are used to close any remaining gaps -- all in
     a single KruskalRelink pass.
 
-    Like XORCrossoverAsymmetric (and unlike IntersectionCrossover/
-    XORCrossover), no additional edges are sampled from outside the two
+    Like XORCrossoverAsymmetric (and unlike IntersectionCrossoverSampled/
+    XORCrossoverSampled), no additional edges are sampled from outside the two
     parents.
 
     Spanning tree constraints: not supported.

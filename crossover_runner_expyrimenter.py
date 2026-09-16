@@ -15,7 +15,9 @@ from Experiments.Backend import JoblibRunnerBackend, SequentialRunnerBackend
 from Graph.Graph import Graph
 from EA.Operators import (
     UnionCrossover,
+    IntersectionCrossoverSampled,
     IntersectionCrossover,
+    XORCrossoverSampled,
     XORCrossover,
     XORCrossoverAsymmetric,
     XORCrossoverPrioritized,
@@ -44,12 +46,20 @@ def setup_crossover(graph, crossover, n):
     edge_orderer = EdgeOrdererExact()
     edge_sampler = EdgeSamplerUniform(graph.get_edges())
     weight_sampler = RandomWeightSampler()
+    # INTER/XOR = original, exact formalisation (no outside edges); INTER-S/XOR-S = the
+    # "Sampled" variant with additional randomly sampled outside edges in the candidate
+    # pool. UNION has no separate sampled variant (its candidate pool is always exactly
+    # E(T1) u E(T2)), so it keeps its plain name.
     if crossover == "UNION":
         crossover_object = UnionCrossover(graph, edge_orderer, weight_sampler)
     elif crossover == "INTER":
-        crossover_object = IntersectionCrossover(graph, edge_sampler, edge_orderer, weight_sampler, sigma=sigma)
+        crossover_object = IntersectionCrossover(graph, edge_orderer, weight_sampler)
+    elif crossover == "INTER-S":
+        crossover_object = IntersectionCrossoverSampled(graph, edge_sampler, edge_orderer, weight_sampler, sigma=sigma)
     elif crossover == "XOR":
-        crossover_object = XORCrossover(graph, edge_sampler, edge_orderer, weight_sampler, sigma=sigma)
+        crossover_object = XORCrossover(graph, edge_orderer, weight_sampler)
+    elif crossover == "XOR-S":
+        crossover_object = XORCrossoverSampled(graph, edge_sampler, edge_orderer, weight_sampler, sigma=sigma)
     elif crossover == "XOR-A":
         crossover_object = XORCrossoverAsymmetric(graph, edge_orderer, weight_sampler)
     elif crossover == "XOR-P":
@@ -133,7 +143,9 @@ if __name__ == "__main__":
     # ---- full-scale design (mirrors the old ex05_parameters.py grid) ----
     path_to_instances = "instances/100"
     instances = [os.path.join(path_to_instances, f) for f in os.listdir(path_to_instances)]
-    crossovers = ["UNION", "INTER", "XOR", "UNION-I", "INTER-I", "XOR-P-I", "XOR-A-I"]
+    # INTER-S/XOR-S (not the plain INTER/XOR, which are now the exact/original
+    # formalisation): the Sampled variants, established as the default for experiments
+    crossovers = ["UNION", "INTER-S", "XOR-S", "UNION-I", "INTER-I", "XOR-P-I", "XOR-A-I"]
     repls = list(range(1, 11))  # 10 independent reps, as in ex05_parameters.py
 
     # example use of the predicate feature Jakob just added: exclude a
