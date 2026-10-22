@@ -1165,7 +1165,97 @@ class UnionCrossover(Recombinator):
         ).solve().get_solution()
 
         return self.child
-    
+
+
+class UnionCrossoverSampled(Recombinator):
+    """
+    Union Crossover (UX-S) recombination operator -- candidate pool extended
+    with additional randomly sampled edges.
+
+    Like UnionCrossover, the child is relinked from the empty graph (V, {}) over
+    the union of both parents' edges, but the candidate pool additionally holds
+    a linear (in the number of nodes) number of randomly sampled edges from the
+    source graph, scalarised with a random weight vector. This is the UNION
+    counterpart of IntersectionCrossoverSampled and XORCrossoverSampled.
+
+    Spanning tree constraints: not supported.
+    """
+
+    def __init__(
+        self,
+        graph: Graph,
+        edge_sampler: EdgeSampler | None = None,
+        edge_orderer: EdgeOrderer | None = None,
+        weight_sampler: WeightSampler | None = None,
+        sigma: int | None = None,
+    ) -> None:
+        """
+        Initialise a UnionCrossoverSampled object.
+
+        Args:
+            graph (Graph): the source graph.
+            edge_sampler (EdgeSampler): sampling strategy for the additional
+                random edges. Defaults to uniform sampling over all edges of
+                'graph'.
+            edge_orderer (EdgeOrderer): strategy for ordering the candidate edges
+                before passing down to KruskalRelink. Defaults to an instance of
+                EdgeOrdererExact.
+            weight_sampler (WeightSampler): an object of class RandomWeightSampler
+                which is used to sample weights for the scalarisation part.
+            sigma (int | None): number of additional random edges to sample into
+                the candidate pool. Defaults to graph.get_n() (i.e., linear in the
+                number of nodes).
+        """
+        super().__init__()
+
+        self.graph = graph
+        self.edge_sampler = edge_sampler if edge_sampler is not None else EdgeSamplerUniform(graph.get_edges())
+        self.edge_orderer = edge_orderer if edge_orderer is not None else EdgeOrdererExact()
+        self.weight_sampler = weight_sampler if weight_sampler is not None else RandomWeightSampler()
+        self.sigma = sigma if sigma is not None else graph.get_n()
+
+    def create(self, tree1: Graph, tree2: Graph) -> Graph:
+        """
+        Produce a new spanning tree based on the UnionCrossoverSampled logic.
+
+        Args:
+            tree1 (Graph): the first parent spanning tree.
+            tree2 (Graph): the second parent spanning tree.
+
+        Returns:
+            A spanning tree.
+        """
+        assert tree1.is_spanning_tree()
+        assert tree2.is_spanning_tree()
+
+        q = tree1.get_q()
+
+        # union of both parents' edges (each edge once)
+        union_edges = list(tree1.get_edges())
+        for e in tree2.get_edges():
+            if not tree1.has_edge(e.v, e.w):
+                union_edges.append(e)
+
+        # candidate pool for relinking: the union plus a linear number of
+        # additional randomly sampled edges
+        sampled_edges = self.edge_sampler.sample(self.sigma)
+        candidate_edges = union_edges + sampled_edges
+
+        # sample random weight vector
+        lambdas = self.weight_sampler.sample(q)[0]
+
+        relevant_edges = self.edge_orderer.order(candidate_edges, lambdas)
+
+        self.child = KruskalRelink(
+            self.graph,
+            relevant_edges,
+        ).solve().get_solution()
+
+        assert self.child.is_spanning_tree()
+
+        return self.child
+
+
 class IntersectionCrossoverSampled(Recombinator):
     """
     Intersection Crossover (IX-S) recombination operator -- candidate pool

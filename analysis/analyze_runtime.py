@@ -118,7 +118,7 @@ def plot_runtime(df, out_dir, title_suffix):
             ax.set_xticklabels(algos, rotation = 45 if n_algos > 4 else 0, ha = 'right' if n_algos > 4 else 'center',
                                 fontsize = 8 if n_algos <= 10 else 7)
             ax.set_ylim(bottom = 0)
-            ax.set_title(f'n = {size}' if len(columns) == 1 else f'n = {size} -- {column}')
+            ax.set_title(f'n = {size}' if len(columns) == 1 else f'n = {size}, {column}')
             if col_idx == 0:
                 ax.set_ylabel('Runtime [s]')
 

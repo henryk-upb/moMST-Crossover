@@ -79,7 +79,7 @@ def plot_pf_coverage_by_class(by_class_points, out_dir, normalize):
     for ax in axes_flat[len(classes):]:
         ax.axis('off')
 
-    title_suffix = ' -- normalized per instance' if normalize else ''
+    title_suffix = ', normalized per instance' if normalize else ''
     fig.suptitle(f'Pareto Front Coverage per Instance Class{title_suffix}')
     fig.tight_layout(rect = (0, 0, 1, 0.95))
     out_path = os.path.join(out_dir, 'pf_coverage_by_class.png')

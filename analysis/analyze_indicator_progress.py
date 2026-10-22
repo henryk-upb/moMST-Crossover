@@ -85,8 +85,26 @@ def compute_value_progress(df):
     return agg
 
 
+def add_generation_column(agg, df):
+    '''Adds the generation that belongs to each budget step (x-axis of the plots).'''
+    agg['gen'] = agg['budget_pct'].map(df.groupby('budget_pct')['gen'].max())
+    return agg
+
+
+def set_generation_axis(ax, gens):
+    '''x-axis from generation 0 with a tick every second logged snapshot (0, 20, 40, ...
+    for log_every = 10). Starting at 0 keeps all tick intervals equally long, so the
+    first data point (generation 10) sits exactly halfway between 0 and 20 (matplotlib's
+    default would start the axis just left of the first point).'''
+    gens = sorted(set(gens))
+    step = min((b - a for a, b in zip(gens, gens[1:])), default = gens[0] or 1)
+    ax.set_xticks(range(0, gens[-1] + 1, 2 * step))
+    ax.set_xlim(0, gens[-1] + step / 4)
+    ax.set_xlabel('Generation')
+
+
 def plot_indicator_progress(agg, out_dir, mode, stat):
-    '''Ein Panel je Indikator: x-Achse = % des Budgets (Zeit), y-Achse =
+    '''Ein Panel je Indikator: x-Achse = Generation, y-Achse =
     mean/median (je nach stat) ueber R x K Wiederholungen/Instanzen, eine
     Linie je Algorithmus, mit einem q25-q75-Band. mode='rank' plottet den
     ueber alle Instanzen gepoolten Rang (niedriger = besser, y-Achse
@@ -109,15 +127,14 @@ def plot_indicator_progress(agg, out_dir, mode, stat):
             line = sub[sub['algorithm'] == algo].sort_values('budget_pct')
             if line.empty:
                 continue
-            plotted, = ax.plot(line['budget_pct'], line[stat], marker = 'o', color = colors[algo], label = algo)
-            ax.fill_between(line['budget_pct'], line['q25'], line['q75'], color = plotted.get_color(), alpha = 0.15)
-        ax.set_xlabel('% of Maximum Generations/Evaluations')
+            plotted, = ax.plot(line['gen'], line[stat], marker = 'o', color = colors[algo], label = algo)
+            ax.fill_between(line['gen'], line['q25'], line['q75'], color = plotted.get_color(), alpha = 0.15)
+        set_generation_axis(ax, sub['gen'])
         if mode == 'rank':
-            ax.set_ylabel(f'{stat.capitalize()} Rank (lower = better)')
+            ax.set_ylabel(f'{stat.capitalize()} Rank')
             ax.invert_yaxis()
         else:
-            better = 'higher' if HIGHER_IS_BETTER.get(indicator, True) else 'lower'
-            ax.set_ylabel(f'{stat.capitalize()} {indicator} ({better} = better)')
+            ax.set_ylabel(f'{stat.capitalize()} {indicator}')
         ax.set_title(indicator)
 
     handles, labels = axes[-1].get_legend_handles_labels()
@@ -128,7 +145,7 @@ def plot_indicator_progress(agg, out_dir, mode, stat):
         axes[-1].legend()
         fig.tight_layout(rect = (0, 0, 1, 0.94))
     title_mode = 'Rank (pooled over all instances)' if mode == 'rank' else 'Raw Value'
-    fig.suptitle(f'Indicator Progress over Budget -- {title_mode}, {stat}')
+    fig.suptitle(f'Indicator Progress over Generations, {title_mode}, {stat}')
 
     out_path = os.path.join(out_dir, 'indicator_progress.png')
     fig.savefig(out_path, dpi = 150, bbox_inches = 'tight')
@@ -169,17 +186,16 @@ def plot_indicator_progress_by_class(agg, out_dir, stat, indicator):
             line = sub[sub['algorithm'] == algo].sort_values('budget_pct')
             if line.empty:
                 continue
-            plotted, = ax.plot(line['budget_pct'], line[stat], marker = 'o', color = colors[algo], label = algo)
-            ax.fill_between(line['budget_pct'], line['q25'], line['q75'], color = plotted.get_color(), alpha = 0.15)
-        ax.set_xlabel('% of Max. Gen./Eval.')
-        better = 'higher' if HIGHER_IS_BETTER.get(indicator, True) else 'lower'
-        ax.set_ylabel(f'{stat.capitalize()} {indicator} ({better} = better)')
+            plotted, = ax.plot(line['gen'], line[stat], marker = 'o', color = colors[algo], label = algo)
+            ax.fill_between(line['gen'], line['q25'], line['q75'], color = plotted.get_color(), alpha = 0.15)
+        set_generation_axis(ax, sub['gen'])
+        ax.set_ylabel(f'{stat.capitalize()} {indicator}')
         ax.set_title(f'Class {cls}', fontsize = 9)
         ax.legend(fontsize = 7)
     for ax in axes_flat[len(classes):]:
         ax.axis('off')
 
-    fig.suptitle(f'{indicator} Progress over Budget -- per Instance Class ({stat})')
+    fig.suptitle(f'{indicator} Progress over Generations per Instance Class ({stat})')
     fig.tight_layout(rect = (0, 0, 1, 0.94))
     out_path = os.path.join(out_dir, 'indicator_progress.png')
     fig.savefig(out_path, dpi = 150, bbox_inches = 'tight')
@@ -260,7 +276,7 @@ def main():
     if args.facet_by_class:
         if len(indicators_wanted) != 1:
             raise SystemExit('--facet-by-class erwartet genau EINEN Indikator via --indicators.')
-        agg = compute_value_progress_by_class(df)
+        agg = add_generation_column(compute_value_progress_by_class(df), df)
         out_dir = os.path.join(args.out, args.label)
         out_path = plot_indicator_progress_by_class(agg, out_dir, args.stat, indicators_wanted[0])
         agg_csv = os.path.join(out_dir, 'indicator_progress.csv')
@@ -280,6 +296,7 @@ def main():
         agg = compute_value_progress(df)
     else:
         agg, _ = compute_rank_progress(df)
+    agg = add_generation_column(agg, df)
 
     out_dir = os.path.join(args.out, args.label)
     out_path = plot_indicator_progress(agg, out_dir, mode, args.stat)

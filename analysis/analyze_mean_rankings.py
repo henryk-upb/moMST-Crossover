@@ -120,8 +120,10 @@ def compute_indicator_table(registries, budget_pcts, instances_filter = None, in
                 igd_indicator = IGD(pf = eps_ref)
                 eps_indicator = Epsilon(pf = eps_ref)
 
+            max_gen = max_generation(by_algo_traj)
             for budget_pct in budget_pcts:
                 snapshots = snapshot_points_at_budget(by_algo, by_algo_traj, budget_pct)
+                gen = max_gen if budget_pct >= 100 else round(budget_pct / 100.0 * max_gen)
                 for algo, repls in snapshots.items():
                     config = f'{algo} ({budget_pct}%)'
                     for repl, points in repls:
@@ -137,7 +139,7 @@ def compute_indicator_table(registries, budget_pcts, instances_filter = None, in
                         for indicator_name, value in values.items():
                             records.append({
                                 'instance': instance, 'class': instance_class, 'repl': int(repl),
-                                'config': config, 'algorithm': algo, 'budget_pct': budget_pct,
+                                'config': config, 'algorithm': algo, 'budget_pct': budget_pct, 'gen': gen,
                                 'indicator': indicator_name, 'value': value,
                             })
 

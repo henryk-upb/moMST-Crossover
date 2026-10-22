@@ -112,7 +112,7 @@ def plot_pf_by_class(by_class, out_dir, repl_for_scatter = None, show_all_repls 
     for ax in axes_flat[len(classes):]:
         ax.axis('off')
 
-    fig.suptitle('Pareto Front Approximation -- per instance class')
+    fig.suptitle('Pareto Front Approximation per instance class')
     fig.tight_layout(rect = (0, 0, 1, 0.94))
     out_path = os.path.join(out_dir, 'pf_approximation.png')
     fig.savefig(out_path, dpi = 150, bbox_inches = 'tight')
@@ -153,7 +153,7 @@ def plot_convergence_by_class(by_class_progress, out_dir, hide_first_gen = False
         ax.axis('off')
 
     title_suffix = ' (first generation hidden)' if hide_first_gen else ''
-    fig.suptitle(f'Convergence Trajectory -- per instance class{title_suffix}')
+    fig.suptitle(f'Convergence Trajectory per instance class{title_suffix}')
     fig.tight_layout(rect = (0, 0, 1, 0.94))
     out_path = os.path.join(out_dir, 'convergence_trajectory.png')
     fig.savefig(out_path, dpi = 150, bbox_inches = 'tight')

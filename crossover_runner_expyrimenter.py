@@ -15,6 +15,7 @@ from Experiments.Backend import JoblibRunnerBackend, SequentialRunnerBackend
 from Graph.Graph import Graph
 from EA.Operators import (
     UnionCrossover,
+    UnionCrossoverSampled,
     IntersectionCrossoverSampled,
     IntersectionCrossover,
     XORCrossoverSampled,
@@ -46,12 +47,13 @@ def setup_crossover(graph, crossover, n):
     edge_orderer = EdgeOrdererExact()
     edge_sampler = EdgeSamplerUniform(graph.get_edges())
     weight_sampler = RandomWeightSampler()
-    # INTER/XOR = original, exact formalisation (no outside edges); INTER-S/XOR-S = the
-    # "Sampled" variant with additional randomly sampled outside edges in the candidate
-    # pool. UNION has no separate sampled variant (its candidate pool is always exactly
-    # E(T1) u E(T2)), so it keeps its plain name.
+    # UNION/INTER/XOR = original, exact formalisation (no outside edges); UNION-S/INTER-S/
+    # XOR-S = the "Sampled" variant with additional randomly sampled outside edges in the
+    # candidate pool.
     if crossover == "UNION":
         crossover_object = UnionCrossover(graph, edge_orderer, weight_sampler)
+    elif crossover == "UNION-S":
+        crossover_object = UnionCrossoverSampled(graph, edge_sampler, edge_orderer, weight_sampler, sigma=sigma)
     elif crossover == "INTER":
         crossover_object = IntersectionCrossover(graph, edge_orderer, weight_sampler)
     elif crossover == "INTER-S":

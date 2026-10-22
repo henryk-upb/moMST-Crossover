@@ -114,6 +114,13 @@ def read_trajectory(path):
     with open(path, newline = '') as f:
         for row in csv.DictReader(f):
             gens.setdefault(int(row['gen']), []).append((float(row['c1']), float(row['c2'])))
+    # NSGA2.run() logs the final population twice when max_gens is a multiple of log_every
+    # (once inside the loop, once after it), and write_result() labels the copy as one more
+    # log step (e.g. "110" for a 100-generation run). Drop that copy so the last snapshot
+    # carries the true final generation.
+    ordered = sorted(gens)
+    if len(ordered) >= 2 and gens[ordered[-1]] == gens[ordered[-2]]:
+        del gens[ordered[-1]]
     return gens
 
 
@@ -392,7 +399,7 @@ def plot_distributions_by_class(by_class, out_dir):
                  ha = 'right' if n > 5 else 'center', fontsize = 8)
     for ax in axes_flat[len(classes):]:
         ax.axis('off')
-    fig.suptitle('HV Distribution (Violin Plot) -- per instance class')
+    fig.suptitle('HV Distribution (Violin Plot) per instance class')
     fig.tight_layout(rect = (0, 0, 1, 0.94))
     paths['violinplot'] = os.path.join(out_dir, 'hv_violinplot.png')
     fig.savefig(paths['violinplot'], dpi = 150, bbox_inches = 'tight')
@@ -411,7 +418,7 @@ def plot_distributions_by_class(by_class, out_dir):
         ax.legend(fontsize = 7)
     for ax in axes_flat[len(classes):]:
         ax.axis('off')
-    fig.suptitle('Empirical Distribution Function (ECDF) -- per instance class')
+    fig.suptitle('Empirical Distribution Function (ECDF) per instance class')
     fig.tight_layout(rect = (0, 0, 1, 0.94))
     paths['ecdf'] = os.path.join(out_dir, 'hv_ecdf.png')
     fig.savefig(paths['ecdf'], dpi = 150, bbox_inches = 'tight')
